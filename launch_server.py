@@ -1,3 +1,4 @@
+import logging
 import asyncio
 
 import websockets
@@ -11,4 +12,5 @@ async def launch_server(ip: str, port: int) -> None:
         
         
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(launch_server("localhost", 8765))

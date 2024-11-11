@@ -5,8 +5,8 @@ import asyncio
 from queue import Queue
 from typing import Dict, Any, List
 
-import av
 import numpy as np
+from av.video import VideoFrame
 from aiortc import RTCDataChannel, VideoStreamTrack
 
 from .signaling_utils import WebRTCClient, receive_signaling
@@ -22,10 +22,13 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         super().__init__()
         self.track: VideoStreamTrack = track
         
-    async def recv(self) -> av.VideoFrame:
-        frame: av.VideoFrame = await self.track.recv()
+    async def recv(self) -> VideoFrame:
+        print("Receiving RGB frame...")
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
+        print("Decoding to rgb frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
+        print(f"PTS: {frame.pts} RGB image put into queue...")
         
         return frame
     
@@ -35,11 +38,14 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         super().__init__()
         self.track: VideoStreamTrack = track
         
-    async def recv(self) -> av.VideoFrame:
-        frame: av.VideoFrame = await self.track.recv()
+    async def recv(self) -> VideoFrame:
+        print("Receiving Depth frame...")
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
+        print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.float32)
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
+        print(f"PTS: {frame.pts} Depth image put into queue...")
         
         return frame
     
@@ -49,11 +55,14 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         super().__init__()
         self.track: VideoStreamTrack = track
         
-    async def recv(self) -> av.VideoFrame:
-        frame: av.VideoFrame = await self.track.recv()
+    async def recv(self) -> VideoFrame:
+        print("Receiving Semantic frame...")
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
+        print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.int32)
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
+        print(f"PTS: {frame.pts} Semantic image put into queue...")
         
         return frame
     
@@ -99,15 +108,18 @@ class ReceiverPeer(WebRTCClient):
             self.data_channel = channel
 
             @self.data_channel.on("open")
-            def on_open() -> None:
+            async def on_open() -> None:
                 while not self.done.is_set():
-                    action: Dict[str, Any] = self.loop.run_in_executor(None, self.action_queue.get)
+                    action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
+                    print(f"Sending action {action} to provider...")
                     self.data_channel.send(json.dumps(action))
 
             @self.data_channel.on("message")
             async def on_message(message: bytes) -> None:
+                print(f"Received message: {message} for provider...")
                 state: Dict[str, Any] = json.loads(message)
-                await self.state_queue.put(state)
+                # await self.state_queue.put(state)
+                await self.syncronize_to_step(state)
 
             @self.data_channel.on("close")
             def on_close() -> None:
@@ -129,38 +141,39 @@ class ReceiverPeer(WebRTCClient):
         semantic_processor: VideoStreamTrack = SemanticProcessor(track)
         self.pc.addTrack(semantic_processor)
         
-    async def syncronize_to_step(self) -> None: # asyncio.create_task(receiver.process_data())
-        while not self.done.is_set():
-            rgb_data: Dict[str, Any] = await self.rgb_queue.get()
-            depth_data: Dict[str, Any] = await self.depth_queue.get()
-            semantic_data: Dict[str, Any] = await self.semantic_queue.get()
-            state: Dict[str, Any] = await self.state_queue.get()
-            
-            self.rgb_buffer.append(rgb_data)
-            self.depth_buffer.append(depth_data)
-            self.semantic_buffer.append(semantic_data)
-            self.state_buffer.append(state)
-            
-            # Find the closest matching pts values
-            min_pts: int = min(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
-            max_pts: int = max(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
-            
-            if max_pts - min_pts > 100:
-                return None
-            
-            step: Dict[str, Any] = {
-                'rgb': rgb_data['rgb'], 
-                'depth': depth_data['depth'], 
-                'semantic': semantic_data['semantic'], 
-            }
-            step.update(state)
-            push_to_buffer(self.step_queue, step)
-            
-            # Remove the used data from buffers
-            self.rgb_buffer.remove(rgb_data)
-            self.depth_buffer.remove(depth_data)
-            self.semantic_buffer.remove(semantic_data)
-            self.state_buffer.remove(state)
+    async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
+        # while not self.done.is_set():
+        print("Synchronizing data...")
+        rgb_data: Dict[str, Any] = await self.rgb_queue.get()
+        depth_data: Dict[str, Any] = await self.depth_queue.get()
+        semantic_data: Dict[str, Any] = await self.semantic_queue.get()
+        # state: Dict[str, Any] = await self.state_queue.get()
+        print("Data synchronized...")
+    
+        # self.rgb_buffer.append(rgb_data)
+        # self.depth_buffer.append(depth_data)
+        # self.semantic_buffer.append(semantic_data)
+        # self.state_buffer.append(state)
+        
+        # Find the closest matching pts values
+        # min_pts: int = min(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
+        # max_pts: int = max(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
+        
+        # if max_pts - min_pts <= 100:
+        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
+        step: Dict[str, Any] = {
+            'rgb': rgb_data['rgb'], 
+            'depth': depth_data['depth'], 
+            'semantic': semantic_data['semantic'], 
+        }
+        step.update(state)
+        push_to_buffer(self.step_queue, step)
+        
+        # Remove the used data from buffers
+        # self.rgb_buffer.remove(rgb_data)
+        # self.depth_buffer.remove(depth_data)
+        # self.semantic_buffer.remove(semantic_data)
+        # self.state_buffer.remove(state)
             
     async def run(self) -> None: # asyncio.run(receiver.run())
         await super().run()

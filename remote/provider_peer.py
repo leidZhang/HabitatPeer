@@ -5,9 +5,9 @@ import fractions
 from queue import Queue
 from typing import Tuple, Dict, Any
 
-import av
 import cv2
 import numpy as np
+from av.video import VideoFrame
 from aiortc import VideoStreamTrack, RTCDataChannel
 
 from .comm_utils import (
@@ -52,11 +52,12 @@ class StateSender(BaseAsyncComponent):
             None, self.input_queue.get
         )
         data["pts"] = pts
+        print(f"Sending state: {data}, type: {type(data)}")
         self.data_channel.send(json.dumps(data))
         
         
 class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
-    async def recv(self) -> av.VideoFrame:
+    async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
         frame: np.ndarray = await self.loop.run_in_executor(
             None, self.input_queue.get
@@ -67,14 +68,15 @@ class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
 
         # Create VideoFrame
-        video_frame: av.VideoFrame = av.VideoFrame.from_ndarray(frame, format="rgb24")
+        video_frame: VideoFrame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts, video_frame.time_base = pts, time_base
+        print(f"Sending RGB frame, shape: {frame.shape} type: {type(video_frame)}")
 
         return video_frame
     
     
 class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
-    async def recv(self) -> av.VideoFrame:
+    async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
         frame: np.ndarray = await self.loop.run_in_executor(
             None, self.input_queue.get
@@ -85,8 +87,9 @@ class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
 
         # Create VideoFrame
-        video_frame: av.VideoFrame = av.VideoFrame.from_ndarray(frame, format="rgba")
+        video_frame: VideoFrame = VideoFrame.from_ndarray(frame, format="rgba")
         video_frame.pts, video_frame.time_base = pts, time_base
+        print(f"Sending RGBA frame, shape: {frame.shape} type: {type(video_frame)}")
 
         return video_frame
     
@@ -140,6 +143,7 @@ class ProviderPeer(WebRTCClient):
         @self.data_channel.on("message")
         def on_message(message: bytes) -> None:
             action: Dict[str, Any] = json.loads(message)
+            print(f"Received action: {action}")
             self.loop.run_in_executor(
                 None, push_to_buffer, self.action_queue, action
             )

@@ -1,3 +1,4 @@
+import time
 from typing import List, Dict, Any
 from queue import Queue
 
@@ -24,13 +25,15 @@ class HabitatActuator(Agent):
     def __transmit_observation(self, observations: Observations) -> None:
         for i, channel in enumerate(self.CHANNELS):
             getattr(self, f"{channel}_queue").put(observations[channel].copy())
-            observations[channel] = i
+            observations.pop(channel)
             
         # Convert the Observations object to a dictionary to avoid pickling issues
-        state: dict = {key: observations[key] for key in observations.keys()}
+        state: dict = {key: observations[key].tolist() for key in observations.keys()}
         self.state_queue.put(state.copy())        
         
     def __receive_action(self) -> Dict[str, Any]:
+        while self.action_queue.empty():
+            time.sleep(0.01) 
         return self.action_queue.get()
         
     def reset(self) -> None:

@@ -9,7 +9,7 @@ from websockets import WebSocketServerProtocol
 clients: Set[WebSocketServerProtocol] = set()
 
 
-async def handler(websocket: WebSocketServerProtocol, path):
+async def handler(websocket: WebSocketServerProtocol, path: str = '/') -> None:
     # Register client
     clients.add(websocket)
     logging.info(f"New client {id(websocket)} connected")
@@ -32,6 +32,7 @@ async def handler(websocket: WebSocketServerProtocol, path):
         logging.error(f"Unexpected error: {e}")
     finally:
         # Unregister client
+        logging.info(f"Unregistering client {id(websocket)}...")
         clients.remove(websocket)
         await websocket.close()
 
