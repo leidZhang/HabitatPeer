@@ -6,12 +6,12 @@ from queue import Queue
 from typing import Dict, Any, List
 
 import numpy as np
-from av.video import VideoFrame
+from av import VideoFrame
 from aiortc import RTCDataChannel, VideoStreamTrack
 
 from .signaling_utils import WebRTCClient, receive_signaling
 from .comm_utils import (
-    BaseAsyncComponent, 
+    BaseAsyncComponent,
     decode_from_rgba,
     push_to_buffer
 )
@@ -21,58 +21,58 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self, track: VideoStreamTrack) -> None:
         super().__init__()
         self.track: VideoStreamTrack = track
-        
+
     async def recv(self) -> VideoFrame:
-        print("Receiving RGB frame...")
+        # print("Receiving RGB frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
-        print("Decoding to rgb frame...")
+        # print("Decoding to rgb frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
-        print(f"PTS: {frame.pts} RGB image put into queue...")
-        
+        # print(f"PTS: {frame.pts} RGB image put into queue...")
+
         return frame
-    
-    
+
+
 class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self, track: VideoStreamTrack) -> None:
         super().__init__()
         self.track: VideoStreamTrack = track
-        
+
     async def recv(self) -> VideoFrame:
-        print("Receiving Depth frame...")
+        # print("Receiving Depth frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
-        print("Decoding to rgba frame...")
+        # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.float32)
-        await self.input_queue.put({'rgb': image, 'pts': frame.pts})
-        print(f"PTS: {frame.pts} Depth image put into queue...")
-        
+        await self.input_queue.put({'depth': image, 'pts': frame.pts})
+        # print(f"PTS: {frame.pts} Depth image put into queue...")
+
         return frame
-    
-    
+
+
 class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self, track: VideoStreamTrack) -> None:
         super().__init__()
         self.track: VideoStreamTrack = track
-        
+
     async def recv(self) -> VideoFrame:
-        print("Receiving Semantic frame...")
+        # print("Receiving Semantic frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
-        print("Decoding to rgba frame...")
+        # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.int32)
-        await self.input_queue.put({'rgb': image, 'pts': frame.pts})
-        print(f"PTS: {frame.pts} Semantic image put into queue...")
-        
+        await self.input_queue.put({'semantic': image, 'pts': frame.pts})
+        # print(f"PTS: {frame.pts} Semantic image put into queue...")
+
         return frame
-    
-    
+
+
 class ReceiverPeer(WebRTCClient):
     def __init__(self, signaling_ip, signaling_port) -> None:
         super().__init__(signaling_ip, signaling_port)
         self.data_channel: RTCDataChannel = None
         self.track_counter: int = 0
-        
+
         self.loop: asyncio.AbstractEventLoop = None
         # Queues for each stream/track
         self.depth_queue: asyncio.Queue = None
@@ -81,13 +81,13 @@ class ReceiverPeer(WebRTCClient):
         self.state_queue: asyncio.Queue = None
         self.step_queue: Queue = None
         self.action_queue: Queue = None
-        
+
         # Buffers for each stream/track
         self.depth_buffer: List[Dict[str, Any]] = []
         self.rgb_buffer: List[Dict[str, Any]] = []
         self.semantic_buffer: List[Dict[str, Any]] = []
         self.state_buffer: List[Dict[str, Any]] = []
-        
+
     # TODO: May have to find some way to avoid hard coding the track order
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")
@@ -99,9 +99,9 @@ class ReceiverPeer(WebRTCClient):
                     self.__handle_depth_track(track)
                 elif self.track_counter == 2:
                     self.__handle_semantic_track(track)
-                    
+
                 self.track_counter += 1
-        
+
     def __setup_datachannel_callbacks(self) -> None:
         @self.pc.on("datachannel")
         async def on_datachannel(channel: RTCDataChannel) -> None:
@@ -128,19 +128,31 @@ class ReceiverPeer(WebRTCClient):
             # NOTE: I dont know why this is needed, but without it, on_open() is not called
             if self.data_channel.readyState == "open":
                 await on_open()
-                
+
+    def __set_async_components(
+        self,
+        component: BaseAsyncComponent,
+        queue: Queue,
+    ) -> None:
+        component.set_loop(self.loop)
+        component.set_input_queue(queue)
+
     def __handle_rgb_track(self, track: VideoStreamTrack) -> None:
         rgb_processor: VideoStreamTrack = RGBProcessor(track)
+        self.__set_async_components(rgb_processor, self.rgb_queue)
         self.pc.addTrack(rgb_processor)
-        
+
     def __handle_depth_track(self, track: VideoStreamTrack) -> None:
         depth_processor: VideoStreamTrack = DepthProcessor(track)
+        self.__set_async_components(depth_processor, self.depth_queue)
         self.pc.addTrack(depth_processor)
-        
+
     def __handle_semantic_track(self, track: VideoStreamTrack) -> None:
         semantic_processor: VideoStreamTrack = SemanticProcessor(track)
+        self.__set_async_components(semantic_processor, self.semantic_queue)
         self.pc.addTrack(semantic_processor)
-        
+
+    # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
         # while not self.done.is_set():
         print("Synchronizing data...")
@@ -149,32 +161,32 @@ class ReceiverPeer(WebRTCClient):
         semantic_data: Dict[str, Any] = await self.semantic_queue.get()
         # state: Dict[str, Any] = await self.state_queue.get()
         print("Data synchronized...")
-    
+
         # self.rgb_buffer.append(rgb_data)
         # self.depth_buffer.append(depth_data)
         # self.semantic_buffer.append(semantic_data)
         # self.state_buffer.append(state)
-        
+
         # Find the closest matching pts values
         # min_pts: int = min(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
         # max_pts: int = max(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
-        
+
         # if max_pts - min_pts <= 100:
         print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
         step: Dict[str, Any] = {
-            'rgb': rgb_data['rgb'], 
-            'depth': depth_data['depth'], 
-            'semantic': semantic_data['semantic'], 
+            'rgb': rgb_data['rgb'],
+            'depth': depth_data['depth'],
+            'semantic': semantic_data['semantic'],
         }
         step.update(state)
         push_to_buffer(self.step_queue, step)
-        
+
         # Remove the used data from buffers
         # self.rgb_buffer.remove(rgb_data)
         # self.depth_buffer.remove(depth_data)
         # self.semantic_buffer.remove(semantic_data)
         # self.state_buffer.remove(state)
-            
+
     async def run(self) -> None: # asyncio.run(receiver.run())
         await super().run()
         self.__setup_track_callbacks()
@@ -184,10 +196,9 @@ class ReceiverPeer(WebRTCClient):
         await self.done.wait()
         await self.pc.close()
         await self.signaling.close()
-        
+
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
-        
+
     def set_queue(self, queue_name: str, queue: Queue) -> None:
         setattr(self, f"{queue_name}_queue", queue)
-        
