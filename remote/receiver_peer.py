@@ -116,7 +116,7 @@ class ReceiverPeer(WebRTCClient):
 
             @self.data_channel.on("close")
             def on_close() -> None:
-                print("Data channel closed")
+                logging.log("Data channel closed")
                 self.done.set()
 
             # NOTE: I dont know why this is needed, but without it, on_open() is not called
@@ -149,12 +149,11 @@ class ReceiverPeer(WebRTCClient):
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
         # while not self.done.is_set():
-        print("Synchronizing data...")
+        logging.log("Synchronizing data...")
         rgb_data: Dict[str, Any] = await self.rgb_queue.get()
         depth_data: Dict[str, Any] = await self.depth_queue.get()
         semantic_data: Dict[str, Any] = await self.semantic_queue.get()
         # state: Dict[str, Any] = await self.state_queue.get()
-        print("Data synchronized...")
 
         # if max_pts - min_pts <= 100:
         print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])

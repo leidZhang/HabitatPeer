@@ -1,6 +1,7 @@
 import time
 import json
 import asyncio
+import logging
 import fractions
 from queue import Queue
 from typing import Tuple, Dict, Any
@@ -52,7 +53,6 @@ class StateSender(BaseAsyncComponent):
             None, self.input_queue.get
         )
         data["pts"] = pts
-        print(f"Sending state: {data}")
         self.data_channel.send(json.dumps(data))
 
 
@@ -150,7 +150,7 @@ class ProviderPeer(WebRTCClient):
 
         @self.data_channel.on("open")
         async def on_open() -> None:
-            print("Data channel opened")
+            logging.info("Data channel opened")
             while True:
                 await self.data_sender.send_state()
 
@@ -164,7 +164,7 @@ class ProviderPeer(WebRTCClient):
 
         @self.data_channel.on("close")
         def on_close() -> None:
-            print("Data channel closed")
+            logging.info("Data channel closed")
             self.done.set()
 
     async def run(self) -> None:
