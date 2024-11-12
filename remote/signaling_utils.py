@@ -83,6 +83,11 @@ class WebRTCClient(ABC):
     async def run(self) -> None:
         await self.__setup()
 
+    def stop(self) -> None:
+        if self.done.is_set():
+            return
+        self.done.set()
+
 
 # TODO: May have to modify this function to handle TCP signaling
 async def initiate_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling) -> None:

@@ -151,8 +151,9 @@ class ProviderPeer(WebRTCClient):
         @self.data_channel.on("open")
         async def on_open() -> None:
             print("Data channel opened")
-            while True:
+            while not self.done.is_set():
                 await self.data_sender.send_state()
+            print("Waiting for data channel to close...")
 
         @self.data_channel.on("message")
         def on_message(message: bytes) -> None:

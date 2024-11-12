@@ -107,6 +107,7 @@ class ReceiverPeer(WebRTCClient):
                     action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
                     print(f"Sending action {action} to provider...")
                     self.data_channel.send(json.dumps(action))
+                print("Waiting for provider to close data channel...")
 
             @self.data_channel.on("message")
             async def on_message(message: bytes) -> None:

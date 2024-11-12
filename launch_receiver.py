@@ -1,3 +1,4 @@
+import time
 import random
 import logging
 import asyncio
@@ -9,8 +10,17 @@ from remote import ReceiverPeer
 
 
 # Note: Only for the integration test on the local machine
-def process_step_data(step_queue: Queue, action_queue: Queue) -> None:
-    while True:
+def process_step_data(
+    step_queue: Queue,
+    action_queue: Queue,
+    event: asyncio.Event,
+    loop: asyncio.AbstractEventLoop
+) -> None:
+    while not event.is_set():
+        if step_queue.empty():
+            time.sleep(0.001)
+            continue
+
         print("Processing the data...")
         step_data: dict = step_queue.get()
 
@@ -19,6 +29,9 @@ def process_step_data(step_queue: Queue, action_queue: Queue) -> None:
         cv2.waitKey(1)
 
         action_queue.put({"action": random.randint(0, 7)})
+
+    loop.stop()
+    print("Test complete, waiting for finish...")
 
 
 if __name__ == "__main__":
@@ -35,13 +48,34 @@ if __name__ == "__main__":
         receiver.set_queue(name, asyncio.Queue(max_size))
     for name in queue_names:
         receiver.set_queue(name, Queue(max_size))
+    decision_thread: Thread = Thread(
+        target=process_step_data,
+        args=(
+            receiver.step_queue,
+            receiver.action_queue,
+            receiver.done,
+            loop
+        )
+    )
 
-    # asyncio.run(receiver.run())
-    # asyncio.create_task(receiver.syncronize_to_step())
+    try:
+        loop.create_task(receiver.run())
+        decision_thread.start()
+        loop.run_forever()
+    except KeyboardInterrupt:
+        print("Interrupted by user")
+    except Exception as e:
+        print(f"Error: {e}")
+    finally:
+        print("Closing receiver and loop...")
+        receiver.stop()
 
-    loop.create_task(receiver.run())
-    # loop.create_task(receiver.syncronize_to_step())
+        tasks = asyncio.all_tasks(loop)
+        for task in tasks:
+            task.cancel()
+        loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
 
-    Thread(target=process_step_data, args=(receiver.step_queue, receiver.action_queue)).start()
-
-    loop.run_forever()
+        loop.stop()
+        loop.close()
+        decision_thread.join()
+        print("Program finished")
