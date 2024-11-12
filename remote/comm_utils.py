@@ -1,9 +1,12 @@
+import time
 import asyncio
 from queue import Queue
 from abc import ABC
 from typing import Any, Union
 
 import numpy as np
+from av import VideoFrame
+from aiortc import VideoStreamTrack
 
 RGBA_CHANNELS: int = 4
 LABEL_MAP_CHANNELS: int = 1
@@ -48,6 +51,13 @@ def rgb_to_rgba(rgb: np.ndarray, alpha: int = 255) -> np.ndarray:
     return np.concatenate((rgb, alpha_channel), axis=-1)
 
 
+def get_frame_from_buffer(buffer: Queue) -> Any:
+    if buffer.empty():
+        time.sleep(0.001)
+        return None
+    return buffer.get()
+
+
 def push_to_buffer(buffer: Queue, data: Any) -> None:
     if buffer.full():
         buffer.get()
@@ -65,10 +75,9 @@ class BaseAsyncComponent(ABC):
     def __init__(self):
         self.input_queue: Union[Queue, asyncio.Queue] = None
         self.loop: asyncio.AbstractEventLoop = None
-    
+
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
-        
+
     def set_input_queue(self, input_queue: Union[Queue, asyncio.Queue]) -> None:
         self.input_queue = input_queue
-    
