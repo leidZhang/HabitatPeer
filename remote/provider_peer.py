@@ -7,13 +7,14 @@ from typing import Tuple, Dict, Any
 
 import cv2
 import numpy as np
-from av.video import VideoFrame
-from aiortc import VideoStreamTrack, RTCDataChannel
+from av import VideoFrame
+from aiortc import RTCDataChannel, VideoStreamTrack
 
 from .comm_utils import (
-    BaseAsyncComponent, 
+    BaseAsyncComponent,
     encode_to_rgba,
-    push_to_buffer
+    get_frame_from_buffer,
+    push_to_buffer,
 )
 from .signaling_utils import WebRTCClient, initiate_signaling
 
@@ -27,9 +28,9 @@ VIDEO_TIME_BASE = fractions.Fraction(1, VIDEO_CLOCK_RATE)
 class StateSender(BaseAsyncComponent):
     _timestamp: int
     _start: float
-    
+
     def __init__(
-        self, 
+        self,
         data_channel: RTCDataChannel,
     ) -> None:
         super().__init__()
@@ -54,52 +55,66 @@ class StateSender(BaseAsyncComponent):
         data["pts"] = pts
         print(f"Sending state: {data}, type: {type(data)}")
         self.data_channel.send(json.dumps(data))
-        
-        
+
+
 class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_frame: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
+
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
         frame: np.ndarray = await self.loop.run_in_executor(
-            None, self.input_queue.get
+            None, get_frame_from_buffer, self.input_queue
         )
 
         # Convert frame to RGB
-        frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
+        if frame is not None:
+            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
+            self.last_frame = frame # Update last frame
+        else:
+            frame = self.last_frame # send the last frame if is not ready yet
 
         # Create VideoFrame
         video_frame: VideoFrame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts, video_frame.time_base = pts, time_base
-        print(f"Sending RGB frame, shape: {frame.shape} type: {type(video_frame)}")
 
         return video_frame
-    
-    
+
+
 class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_frame: np.ndarray = np.zeros((480, 640, 4), dtype=np.uint8)
+
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
         frame: np.ndarray = await self.loop.run_in_executor(
-            None, self.input_queue.get
+            None, get_frame_from_buffer, self.input_queue
         )
 
         # Convert frame to RGBA
-        frame = encode_to_rgba(frame) # Use 4 channels to store int32 or float32
-        frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
+        if frame is not None:
+            frame = encode_to_rgba(frame) # Use 4 channels to store int32 or float32
+            frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
+            self.last_frame = frame # Update last frame
+        else:
+            frame = self.last_frame # send the last frame if is not ready yet
 
         # Create VideoFrame
         video_frame: VideoFrame = VideoFrame.from_ndarray(frame, format="rgba")
         video_frame.pts, video_frame.time_base = pts, time_base
-        print(f"Sending RGBA frame, shape: {frame.shape} type: {type(video_frame)}")
 
         return video_frame
-    
-    
+
+
 class ProviderPeer(WebRTCClient):
     def __init__(self, signaling_ip: str, signaling_port: int) -> None:
         super().__init__(signaling_ip, signaling_port)
         self.data_channel: RTCDataChannel = None
         self.data_sender: StateSender = None
-        
+
         self.loop: asyncio.AbstractEventLoop = None
         # Queues for each stream/track
         self.depth_queue: Queue = None
@@ -107,25 +122,25 @@ class ProviderPeer(WebRTCClient):
         self.semantic_queue: Queue = None
         self.state_queue: Queue = None
         self.action_queue: Queue = None
-        
+
     def __set_async_components(
-        self, 
-        component: BaseAsyncComponent, 
+        self,
+        component: BaseAsyncComponent,
         queue: Queue,
     ) -> None:
         component.set_loop(self.loop)
         component.set_input_queue(queue)
 
     def __setup_track_callbacks(self) -> None:
-        rgb_track: RGBStreamTrack = RGBStreamTrack()
+        rgb_track: VideoStreamTrack = RGBStreamTrack()
         self.__set_async_components(rgb_track, self.rgb_queue)
         self.pc.addTrack(rgb_track)
-        
-        depth_track: RGBAStreamTrack = RGBAStreamTrack()
+
+        depth_track: VideoStreamTrack = RGBAStreamTrack()
         self.__set_async_components(depth_track, self.depth_queue)
         self.pc.addTrack(depth_track)
-        
-        semantic_track: RGBAStreamTrack = RGBAStreamTrack()
+
+        semantic_track: VideoStreamTrack = RGBAStreamTrack()
         self.__set_async_components(semantic_track, self.semantic_queue)
         self.pc.addTrack(semantic_track)
 
@@ -161,10 +176,10 @@ class ProviderPeer(WebRTCClient):
         await self.done.wait()
         await self.pc.close()
         await self.signaling.close()
-        
+
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
-        
+
     def set_queue(self, queue_name: str, queue: Queue) -> None:
         setattr(self, f"{queue_name}_queue", queue)
 
@@ -173,7 +188,7 @@ class ProviderPeer(WebRTCClient):
 #     ip, port = "localhost", 1234
 #     max_queue_size: int = 5
 #     logging.basicConfig(level=logging.ERROR)
-    
+
 #     peer: ProviderPeer = ProviderPeer(ip, port)
 #     depth_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
 #     rgb_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
@@ -201,10 +216,9 @@ class ProviderPeer(WebRTCClient):
 #         empty_queue(rgb_queue)
 #         empty_queue(semantic_queue)
 #         empty_queue(state_queue)
-        
+
 #         loop.close()
 #         depth_executor.shutdown()
 #         rgb_executor.shutdown()
 #         semantic_executor.shutdown()
 #         state_executor.shutdown()
-        
