@@ -118,12 +118,12 @@ class ReceiverPeer(WebRTCClient):
             async def on_message(message: bytes) -> None:
                 print(f"Received message: {message} for provider...")
                 state: Dict[str, Any] = json.loads(message)
-                # await self.state_queue.put(state)
                 await self.syncronize_to_step(state)
 
             @self.data_channel.on("close")
             def on_close() -> None:
                 print("Data channel closed")
+                self.done.set()
 
             # NOTE: I dont know why this is needed, but without it, on_open() is not called
             if self.data_channel.readyState == "open":

@@ -53,7 +53,7 @@ class StateSender(BaseAsyncComponent):
             None, self.input_queue.get
         )
         data["pts"] = pts
-        print(f"Sending state: {data}, type: {type(data)}")
+        print(f"Sending state: {data}")
         self.data_channel.send(json.dumps(data))
 
 
@@ -166,6 +166,7 @@ class ProviderPeer(WebRTCClient):
         @self.data_channel.on("close")
         def on_close() -> None:
             print("Data channel closed")
+            self.done.set()
 
     async def run(self) -> None:
         await super().run()
