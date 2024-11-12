@@ -18,7 +18,6 @@ from .comm_utils import (
 )
 from .signaling_utils import WebRTCClient, initiate_signaling
 
-
 # Copied from aiortc source code
 VIDEO_PTIME = 1 / 30
 VIDEO_CLOCK_RATE = 90000
@@ -183,43 +182,3 @@ class ProviderPeer(WebRTCClient):
 
     def set_queue(self, queue_name: str, queue: Queue) -> None:
         setattr(self, f"{queue_name}_queue", queue)
-
-
-# if __name__ == "__main__":
-#     ip, port = "localhost", 1234
-#     max_queue_size: int = 5
-#     logging.basicConfig(level=logging.ERROR)
-
-#     peer: ProviderPeer = ProviderPeer(ip, port)
-#     depth_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
-#     rgb_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
-#     semantic_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
-#     state_executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
-
-#     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
-#     rgb_queue, depth_queue = Queue(max_queue_size), Queue(max_queue_size)
-#     semantic_queue, state_queue = Queue(max_queue_size), Queue(max_queue_size)
-
-#     try:
-#         peer.set_loop(loop)
-#         peer.set_queue("depth", depth_queue)
-#         peer.set_queue("rgb", rgb_queue)
-#         peer.set_queue("semantic", semantic_queue)
-#         peer.set_queue("state", state_queue)
-#     except KeyboardInterrupt:
-#         print("User interrupted the program")
-#     except Exception as e:
-#         print(f"An error occurred: {e}")
-#     finally:
-#         print("Closing the program...")
-#         peer.done.set()
-#         empty_queue(depth_queue)
-#         empty_queue(rgb_queue)
-#         empty_queue(semantic_queue)
-#         empty_queue(state_queue)
-
-#         loop.close()
-#         depth_executor.shutdown()
-#         rgb_executor.shutdown()
-#         semantic_executor.shutdown()
-#         state_executor.shutdown()

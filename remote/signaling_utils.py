@@ -25,6 +25,7 @@ class InvalidOfferException(Exception):
 class WebSocketSignaling:
     def __init__(self, uri: str) -> None:
         self.uri: int = uri
+        self.websocket: websockets.WebSocketClientProtocol = None
 
     async def connect(self) -> None:
         print("Connecting to websocket server...")
@@ -83,6 +84,7 @@ class WebRTCClient(ABC):
         await self.__setup()
 
 
+# TODO: May have to modify this function to handle TCP signaling
 async def initiate_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling) -> None:
     if not isinstance(signaling, WebSocketSignaling):
         raise ValueError("signaling must be a WebSocketSignaling object!")
@@ -107,6 +109,7 @@ async def initiate_signaling(pc: RTCPeerConnection, signaling: WebSocketSignalin
     await pc.setRemoteDescription(answer)
 
 
+# TODO: May have to modify this function to handle TCP signaling
 async def receive_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling) -> None:
     if not isinstance(signaling, WebSocketSignaling):
         raise ValueError("signaling must be a WebSocketSignaling object!")
@@ -128,4 +131,3 @@ async def receive_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling
         "sdp": pc.localDescription.sdp,
         "type": pc.localDescription.type
     })
-    # await signaling.send(pc.localDescription)

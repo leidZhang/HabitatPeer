@@ -82,12 +82,6 @@ class ReceiverPeer(WebRTCClient):
         self.step_queue: Queue = None
         self.action_queue: Queue = None
 
-        # Buffers for each stream/track
-        self.depth_buffer: List[Dict[str, Any]] = []
-        self.rgb_buffer: List[Dict[str, Any]] = []
-        self.semantic_buffer: List[Dict[str, Any]] = []
-        self.state_buffer: List[Dict[str, Any]] = []
-
     # TODO: May have to find some way to avoid hard coding the track order
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")
@@ -162,17 +156,8 @@ class ReceiverPeer(WebRTCClient):
         # state: Dict[str, Any] = await self.state_queue.get()
         print("Data synchronized...")
 
-        # self.rgb_buffer.append(rgb_data)
-        # self.depth_buffer.append(depth_data)
-        # self.semantic_buffer.append(semantic_data)
-        # self.state_buffer.append(state)
-
-        # Find the closest matching pts values
-        # min_pts: int = min(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
-        # max_pts: int = max(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
-
         # if max_pts - min_pts <= 100:
-        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'])
+        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
         step: Dict[str, Any] = {
             'rgb': rgb_data['rgb'],
             'depth': depth_data['depth'],
@@ -180,12 +165,6 @@ class ReceiverPeer(WebRTCClient):
         }
         step.update(state)
         push_to_buffer(self.step_queue, step)
-
-        # Remove the used data from buffers
-        # self.rgb_buffer.remove(rgb_data)
-        # self.depth_buffer.remove(depth_data)
-        # self.semantic_buffer.remove(semantic_data)
-        # self.state_buffer.remove(state)
 
     async def run(self) -> None: # asyncio.run(receiver.run())
         await super().run()
