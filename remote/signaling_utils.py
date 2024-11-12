@@ -1,13 +1,15 @@
 import json
 import logging
 import asyncio
-from typing import Any
+from typing import Any, List
 from abc import ABC
 
 import websockets
 from aiortc import (
     RTCPeerConnection,
-    RTCSessionDescription
+    RTCSessionDescription,
+    RTCIceServer,
+    RTCConfiguration,
 )
 from aiortc.contrib.signaling import TcpSocketSignaling
 
@@ -25,6 +27,7 @@ class InvalidOfferException(Exception):
 class WebSocketSignaling:
     def __init__(self, uri: str) -> None:
         self.uri: int = uri
+        self.websocket: websockets.WebSocketClientProtocol = None
 
     async def connect(self) -> None:
         print("Connecting to websocket server...")
@@ -48,7 +51,22 @@ class WebSocketSignaling:
 
 
 class WebRTCClient(ABC):
-    def __init__(self, signaling_ip: str, signaling_port: int, type: str = "websocket") -> None:
+    def __init__(
+        self,
+        signaling_ip: str,
+        signaling_port: int,
+        type: str = "websocket",
+        stun_urls: List[str] = None,
+    ) -> None:
+        self.ice_connection_state: str = "new"
+        self.done: asyncio.Event = asyncio.Event()
+        self.stun_urls: List[str] = stun_urls
+
+        self.__get_signaling(signaling_ip, signaling_port, type)
+        self.__handle_stun_setup()
+
+
+    def __get_signaling(self, signaling_ip: str, signaling_port: int, type: str) -> None:
         if type == "websocket":
             self.signaling: WebSocketSignaling = WebSocketSignaling(
                 f"ws://{signaling_ip}:{signaling_port}"
@@ -58,9 +76,17 @@ class WebRTCClient(ABC):
         else:
             raise ValueError("Invalid signaling type!")
 
-        self.pc = RTCPeerConnection()
-        self.ice_connection_state: str = "new"
-        self.done: asyncio.Event = asyncio.Event()
+    def __handle_stun_setup(self) -> None:
+        if self.stun_urls is None:
+            self.pc = RTCPeerConnection()
+            return
+
+        logging.info("Configuring STUN servers...")
+        stun_servers: List[RTCIceServer] = []
+        for url in self.stun_urls:
+            stun_servers.append(RTCIceServer(urls=url))
+        rtc_config: RTCConfiguration = RTCConfiguration(iceServers=stun_servers)
+        self.pc = RTCPeerConnection(rtc_config)
 
     async def __setup(self) -> None:
         await self.signaling.connect()
@@ -83,6 +109,7 @@ class WebRTCClient(ABC):
         await self.__setup()
 
 
+# TODO: May have to modify this function to handle TCP signaling
 async def initiate_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling) -> None:
     if not isinstance(signaling, WebSocketSignaling):
         raise ValueError("signaling must be a WebSocketSignaling object!")
@@ -107,6 +134,7 @@ async def initiate_signaling(pc: RTCPeerConnection, signaling: WebSocketSignalin
     await pc.setRemoteDescription(answer)
 
 
+# TODO: May have to modify this function to handle TCP signaling
 async def receive_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling) -> None:
     if not isinstance(signaling, WebSocketSignaling):
         raise ValueError("signaling must be a WebSocketSignaling object!")
@@ -128,4 +156,3 @@ async def receive_signaling(pc: RTCPeerConnection, signaling: WebSocketSignaling
         "sdp": pc.localDescription.sdp,
         "type": pc.localDescription.type
     })
-    # await signaling.send(pc.localDescription)
