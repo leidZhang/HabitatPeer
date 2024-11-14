@@ -9,31 +9,35 @@ from remote import ProviderPeer
 from remote.comm_utils import empty_queue
 from scene import HabitatActuator
 
+
 def start_habitat(agent: HabitatActuator, provider_event: asyncio.Event, loop: asyncio.AbstractEventLoop) -> None:
-    width, height = 1280, 960
+    width, height = 640, 480
 
     print("initializing habitat env...")
 
     observation = {
         "depth": np.random.rand(height, width, 1).astype(np.float32),
-        "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
+        # "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
+        "rgb": np.zeros((height, width, 3), dtype=np.uint8),
         "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
         "gps": np.array([0, 0, 0]),
         "compass": np.array([0]),
     }
     agent.reset()
 
-    for _ in range(1000):
+    i = 0
+    while i < 1000:
         # make sure not stuck here forever
         if provider_event.is_set():
             print("Detected provider stop event, exiting...")
             break
 
         action = agent.act(observation)
-        print(f"Received agent action: {action}")
+        # print(f"Received agent action: {action}")
         observation = {
             "depth": np.random.rand(height, width, 1).astype(np.float32),
-            "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
+            # "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
+            "rgb": np.ones((height, width, 3), dtype=np.uint8) * (i % 256),
             "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
             "gps": np.array([0, 0, 0]),
             "compass": np.array([0]),
@@ -76,7 +80,6 @@ if __name__ == "__main__":
     finally:
         print("Clossing provider and loop...")
         provider.stop()
-
 
         tasks = asyncio.all_tasks(loop)
         for task in tasks:

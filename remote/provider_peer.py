@@ -10,6 +10,7 @@ import cv2
 import numpy as np
 from av import VideoFrame
 from aiortc import RTCDataChannel, VideoStreamTrack
+from aiortc.contrib.media import MediaBlackhole
 
 from .comm_utils import (
     BaseAsyncComponent,
@@ -113,6 +114,7 @@ class ProviderPeer(WebRTCClient):
         super().__init__(signaling_ip, signaling_port)
         self.data_channel: RTCDataChannel = None
         self.data_sender: StateSender = None
+        self.blackhole: MediaBlackhole = None
 
         self.loop: asyncio.AbstractEventLoop = None
         # Queues for each stream/track
@@ -131,6 +133,14 @@ class ProviderPeer(WebRTCClient):
         component.set_input_queue(queue)
 
     def __setup_track_callbacks(self) -> None:
+        self.blackhole = MediaBlackhole() # TODO: Temp measure, receiver should not send back any frames
+
+        @self.pc.on("track")
+        async def on_track(track: VideoStreamTrack) -> None:
+            print("Received garbage track")
+            self.blackhole.addTrack(track)
+            await self.blackhole.start()
+
         rgb_track: VideoStreamTrack = RGBStreamTrack()
         self.__set_async_components(rgb_track, self.rgb_queue)
         self.pc.addTrack(rgb_track)
@@ -157,7 +167,7 @@ class ProviderPeer(WebRTCClient):
         @self.data_channel.on("message")
         def on_message(message: bytes) -> None:
             action: Dict[str, Any] = json.loads(message)
-            print(f"Received action: {action}")
+            # print(f"Received action: {action}")
             self.loop.run_in_executor(
                 None, push_to_buffer, self.action_queue, action
             )

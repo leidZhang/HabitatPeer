@@ -2,6 +2,7 @@ import time
 import json
 import logging
 import asyncio
+import fractions
 from queue import Queue
 from typing import Dict, Any, List
 
@@ -15,6 +16,10 @@ from .comm_utils import (
     decode_from_rgba,
     push_to_buffer
 )
+
+GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((1, 1, 3), dtype=np.uint8), format="rgb24")
+GARBAGE_FRAME.pts = 0
+GARBAGE_FRAME.time_base = fractions.Fraction(1, 90000)
 
 
 class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -30,7 +35,7 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} RGB image put into queue...")
 
-        return frame
+        return GARBAGE_FRAME
 
 
 class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -47,7 +52,7 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         await self.input_queue.put({'depth': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
-        return frame
+        return GARBAGE_FRAME
 
 
 class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -64,7 +69,7 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         await self.input_queue.put({'semantic': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Semantic image put into queue...")
 
-        return frame
+        return GARBAGE_FRAME
 
 
 class ReceiverPeer(WebRTCClient):
@@ -117,7 +122,7 @@ class ReceiverPeer(WebRTCClient):
 
             @self.data_channel.on("close")
             def on_close() -> None:
-                logging.log("Data channel closed")
+                logging.info("Data channel closed")
                 self.done.set()
 
             # NOTE: I dont know why this is needed, but without it, on_open() is not called
@@ -150,7 +155,7 @@ class ReceiverPeer(WebRTCClient):
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
         # while not self.done.is_set():
-        logging.log("Synchronizing data...")
+        logging.info("Synchronizing data...")
         rgb_data: Dict[str, Any] = await self.rgb_queue.get()
         depth_data: Dict[str, Any] = await self.depth_queue.get()
         semantic_data: Dict[str, Any] = await self.semantic_queue.get()
