@@ -4,6 +4,7 @@ import asyncio
 import logging
 import fractions
 from queue import Queue
+from datetime import datetime
 from typing import Tuple, Dict, Any, List
 
 import cv2
@@ -24,6 +25,11 @@ from .signaling_utils import WebRTCClient, initiate_signaling
 VIDEO_PTIME = 1 / 30
 VIDEO_CLOCK_RATE = 90000
 VIDEO_TIME_BASE = fractions.Fraction(1, VIDEO_CLOCK_RATE)
+
+
+def add_timestamp_to_image(image: np.ndarray) -> None:
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+    cv2.putText(image, timestamp, (10, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
 
 
 class StateSender(BaseAsyncComponent):
@@ -77,6 +83,7 @@ class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
             frame = self.last_frame # send the last frame if is not ready yet
 
         # Create VideoFrame
+        add_timestamp_to_image(frame)
         video_frame: VideoFrame = VideoFrame.from_ndarray(frame, format="rgb24")
         video_frame.pts, video_frame.time_base = pts, time_base
 
@@ -111,9 +118,9 @@ class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 
 class ProviderPeer(WebRTCClient):
     def __init__(
-        self, 
-        signaling_ip: str, 
-        signaling_port: int, 
+        self,
+        signaling_ip: str,
+        signaling_port: int,
         stun_urls: List[str] = None
     ) -> None:
         super().__init__(signaling_ip, signaling_port, stun_urls=stun_urls)

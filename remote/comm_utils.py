@@ -51,7 +51,7 @@ def rgb_to_rgba(rgb: np.ndarray, alpha: int = 255) -> np.ndarray:
 
 def get_frame_from_buffer(buffer: Queue) -> Any:
     if buffer.empty():
-        time.sleep(0.001)
+        time.sleep(0.01)
         return None
     return buffer.get()
 
