@@ -73,8 +73,13 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
 
 
 class ReceiverPeer(WebRTCClient):
-    def __init__(self, signaling_ip, signaling_port) -> None:
-        super().__init__(signaling_ip, signaling_port)
+    def __init__(
+        self, 
+        signaling_ip: str, 
+        signaling_port: int, 
+        stun_urls: List[str] = None
+    ) -> None:
+        super().__init__(signaling_ip, signaling_port, stun_urls=stun_urls)
         self.data_channel: RTCDataChannel = None
         self.track_counter: int = 0
 

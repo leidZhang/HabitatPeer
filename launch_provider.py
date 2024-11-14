@@ -1,3 +1,4 @@
+import json
 import logging
 import asyncio
 from queue import Queue
@@ -10,9 +11,12 @@ from remote.comm_utils import empty_queue
 from scene import HabitatActuator
 
 
-def start_habitat(agent: HabitatActuator, provider_event: asyncio.Event, loop: asyncio.AbstractEventLoop) -> None:
-    width, height = 640, 480
-
+def start_habitat(
+    agent: HabitatActuator, 
+    provider_event: asyncio.Event, 
+    width: int = 640,
+    height: int = 480
+) -> None:
     print("initializing habitat env...")
 
     observation = {
@@ -33,7 +37,7 @@ def start_habitat(agent: HabitatActuator, provider_event: asyncio.Event, loop: a
             break
 
         action = agent.act(observation)
-        # print(f"Received agent action: {action}")
+        print(f"print send {i % 256} to the peer...")
         observation = {
             "depth": np.random.rand(height, width, 1).astype(np.float32),
             # "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
@@ -42,7 +46,10 @@ def start_habitat(agent: HabitatActuator, provider_event: asyncio.Event, loop: a
             "gps": np.array([0, 0, 0]),
             "compass": np.array([0]),
         }
-
+        i += 1
+        
+        i = 0 if i == 1000 else i # Temporary fix for testing
+        
     if not provider_event.is_set():
         provider_event.set() # signal provider to stop
     # loop.stop()
@@ -51,9 +58,10 @@ def start_habitat(agent: HabitatActuator, provider_event: asyncio.Event, loop: a
 
 if __name__ == "__main__":
     # logging.basicConfig(level=logging.INFO)
-
-    ip, port, max_size = "localhost", 8765, 3
-    provider: ProviderPeer = ProviderPeer(ip, port)
+    with open("ip_configs.json", "r") as f:
+        config: dict = json.load(f)
+    
+    provider: ProviderPeer = ProviderPeer(config['signaling_ip'], config['port'], config['stun_url'])
     agent: HabitatActuator = HabitatActuator()
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
     queue_names: list = ["depth", "rgb", "semantic", "state", "action"]
@@ -61,13 +69,13 @@ if __name__ == "__main__":
 
     provider.set_loop(loop)
     for name in queue_names:
-        named_queue: Queue = Queue(max_size)
+        named_queue: Queue = Queue(config['max_size'])
         provider.set_queue(name, named_queue)
         agent.set_queue(name, named_queue)
         queue_list.append(named_queue)
     actuator_thread: Thread = Thread(
         target=start_habitat,
-        args=(agent, provider.done, loop)
+        args=(agent, provider.done, config['width'], config['height'])
     )
 
     try:

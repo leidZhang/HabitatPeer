@@ -1,3 +1,4 @@
+import json
 import time
 import random
 import logging
@@ -21,14 +22,12 @@ def process_step_data(
             time.sleep(0.001)
             continue
 
-        print("Processing the data...")
         step_data: dict = step_queue.get()
-
-        cv2.imshow("RGB received", step_data["rgb"])
-        cv2.imshow("Depth received", step_data["depth"])
-        cv2.waitKey(1)
-
+        print(f"Color: {step_data['rgb'][0][0]}, PTS: {step_data['pts']}")
         action_queue.put({"action": random.randint(0, 7)})
+        # cv2.imshow("RGB received", step_data["rgb"])
+        # cv2.imshow("Depth received", step_data["depth"])
+        # cv2.waitKey(1)
 
     loop.stop()
     print("Test complete, waiting for finish...")
@@ -36,18 +35,19 @@ def process_step_data(
 
 if __name__ == "__main__":
     # logging.basicConfig(level=logging.INFO)
+    with open("ip_configs.json", "r") as f:
+        config: dict = json.load(f)
 
-    ip, port, max_size = "localhost", 8765, 3
-    receiver: ReceiverPeer = ReceiverPeer(ip, port)
+    receiver: ReceiverPeer = ReceiverPeer(config['signaling_ip'], config['port'], config['stun_url'])
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
     async_queue_names: list = ["rgb", "depth", "semantic", "state"]
     queue_names: list = ["action", "step"]
 
     receiver.set_loop(loop)
     for name in async_queue_names:
-        receiver.set_queue(name, asyncio.Queue(max_size))
+        receiver.set_queue(name, asyncio.Queue(config['max_size']))
     for name in queue_names:
-        receiver.set_queue(name, Queue(max_size))
+        receiver.set_queue(name, Queue(config['max_size']))
     decision_thread: Thread = Thread(
         target=process_step_data,
         args=(

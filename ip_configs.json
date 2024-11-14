@@ -1,0 +1,9 @@
+{
+    "signaling_ip": "localhost",
+    "server_ip": "localhost",
+    "port": 8765,
+    "stun_url": null,
+    "max_size": 3,
+    "width": 640,
+    "height": 480
+}

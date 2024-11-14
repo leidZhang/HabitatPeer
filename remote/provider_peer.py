@@ -4,7 +4,7 @@ import asyncio
 import logging
 import fractions
 from queue import Queue
-from typing import Tuple, Dict, Any
+from typing import Tuple, Dict, Any, List
 
 import cv2
 import numpy as np
@@ -110,8 +110,13 @@ class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 
 
 class ProviderPeer(WebRTCClient):
-    def __init__(self, signaling_ip: str, signaling_port: int) -> None:
-        super().__init__(signaling_ip, signaling_port)
+    def __init__(
+        self, 
+        signaling_ip: str, 
+        signaling_port: int, 
+        stun_urls: List[str] = None
+    ) -> None:
+        super().__init__(signaling_ip, signaling_port, stun_urls=stun_urls)
         self.data_channel: RTCDataChannel = None
         self.data_sender: StateSender = None
         self.blackhole: MediaBlackhole = None
