@@ -1,3 +1,4 @@
+import json
 import logging
 import asyncio
 
@@ -13,4 +14,7 @@ async def launch_server(ip: str, port: int) -> None:
         
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(launch_server("localhost", 8765))
+    with open("ip_configs.json", "r") as f:
+        config: dict = json.load(f)
+    
+    asyncio.run(launch_server(config['server_ip'], config['port']))

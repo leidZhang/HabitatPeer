@@ -31,7 +31,6 @@ def encode_to_rgba(image: np.ndarray) -> np.ndarray:
 
     return image.view(np.uint8).reshape(height, width, RGBA_CHANNELS)
 
-
 def decode_from_rgba(rgba: np.ndarray, data_type: np.dtype) -> np.ndarray:
     if rgba.shape[2] != 4:
         raise InvalidImageShapeError("RGBA image must have 4 channels")
@@ -39,7 +38,6 @@ def decode_from_rgba(rgba: np.ndarray, data_type: np.dtype) -> np.ndarray:
         raise InvalidDataTypeError("Data type must be float32 or int32")
 
     return rgba.view(data_type).reshape(rgba.shape[0], rgba.shape[1], LABEL_MAP_CHANNELS)
-
 
 def rgb_to_rgba(rgb: np.ndarray, alpha: int = 255) -> np.ndarray:
     if alpha < 0 or alpha > 255:
@@ -52,23 +50,32 @@ def rgb_to_rgba(rgb: np.ndarray, alpha: int = 255) -> np.ndarray:
 
 
 def get_frame_from_buffer(buffer: Queue) -> Any:
-    if buffer.empty():
+    if buffer.empty(): # If buffer is empty, directly return None
         time.sleep(0.001)
         return None
     return buffer.get()
-
 
 def push_to_buffer(buffer: Queue, data: Any) -> None:
     if buffer.full():
         buffer.get()
     buffer.put(data)
-
+    
+async def push_to_async_buffer(buffer: asyncio.Queue, data: Any) -> None:
+    if buffer.full():
+        await buffer.get()
+    await buffer.put(data)
 
 def empty_queue(queue: Queue) -> None:
     print(f"Emptying queue with {queue.qsize()} elements")
     while queue.qsize() > 0:
         queue.get()
     print(f"Current queue size is {queue.qsize()}")
+
+async def empty_async_queue(queue: asyncio.Queue) -> None:
+    print(f"Emptying async queue with {queue.qsize()} elements")
+    while not queue.empty():
+        await queue.get()
+    print(f"Current async queue size is {queue.qsize()}")
 
 
 class BaseAsyncComponent(ABC):
