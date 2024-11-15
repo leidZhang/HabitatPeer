@@ -51,7 +51,7 @@ def start_habitat(
             "rgb": np.ones((height, width, 3), dtype=np.uint8) * ((i + 1) % 256),
             "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
             "gps": np.array([0, 0, 0]),
-            "compass": np.array([0])
+            "compass": np.array([(i + 1) % 256])
         }
         put_timestamp(observation["rgb"])
         

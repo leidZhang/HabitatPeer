@@ -66,12 +66,10 @@ class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
-        frame: np.ndarray = await self.loop.run_in_executor(
-            None, get_frame_from_buffer, self.input_queue
-        )
 
         # Convert frame to RGB
-        if frame is not None:
+        if self.input_queue.qsize() > 0:
+            frame: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
             self.last_frame = frame # Update last frame
@@ -92,12 +90,10 @@ class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
-        frame: np.ndarray = await self.loop.run_in_executor(
-            None, get_frame_from_buffer, self.input_queue
-        )
 
         # Convert frame to RGBA
-        if frame is not None:
+        if self.input_queue.qsize() > 0:
+            frame: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
             frame = encode_to_rgba(frame) # Use 4 channels to store int32 or float32
             frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
             self.last_frame = frame # Update last frame
