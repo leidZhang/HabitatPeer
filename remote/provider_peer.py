@@ -3,6 +3,7 @@ import json
 import asyncio
 import logging
 import fractions
+from datetime import datetime
 from queue import Queue
 from typing import Tuple, Dict, Any, List
 
@@ -54,6 +55,7 @@ class StateSender(BaseAsyncComponent):
             None, self.input_queue.get
         )
         data["pts"] = pts
+        data["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         self.data_channel.send(json.dumps(data))
 
 

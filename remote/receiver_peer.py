@@ -14,7 +14,8 @@ from .signaling_utils import WebRTCClient, receive_signaling
 from .comm_utils import (
     BaseAsyncComponent,
     decode_from_rgba,
-    push_to_buffer
+    push_to_buffer,
+    push_to_async_buffer
 )
 
 GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((1, 1, 3), dtype=np.uint8), format="rgb24")
@@ -33,6 +34,7 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         # print("Decoding to rgb frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
+        # await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} RGB image put into queue...")
 
         return GARBAGE_FRAME
@@ -50,6 +52,7 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.float32)
         await self.input_queue.put({'depth': image, 'pts': frame.pts})
+        # await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
         return GARBAGE_FRAME
@@ -67,6 +70,7 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.int32)
         await self.input_queue.put({'semantic': image, 'pts': frame.pts})
+        # await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Semantic image put into queue...")
 
         return GARBAGE_FRAME
@@ -91,20 +95,28 @@ class ReceiverPeer(WebRTCClient):
         self.state_queue: asyncio.Queue = None
         self.step_queue: Queue = None
         self.action_queue: Queue = None
-
+    
     # TODO: May have to find some way to avoid hard coding the track order
+    def __handle_stream_tracks(self, track: VideoStreamTrack) -> None:
+            if self.track_counter == 0:
+                local_track: VideoStreamTrack = RGBProcessor(track)
+                target_queue: asyncio.Queue = self.rgb_queue
+            elif self.track_counter == 1:
+                local_track: VideoStreamTrack = DepthProcessor(track)
+                target_queue: asyncio.Queue = self.depth_queue
+            elif self.track_counter == 2:
+                local_track: VideoStreamTrack = SemanticProcessor(track)
+                target_queue: asyncio.Queue = self.semantic_queue
+            self.__set_async_components(local_track, target_queue)
+            self.pc.addTrack(local_track)
+
+            self.track_counter += 1        
+
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")
         def on_track(track: VideoStreamTrack):
             if track.kind == "video":
-                if self.track_counter == 0:
-                    self.__handle_rgb_track(track)
-                elif self.track_counter == 1:
-                    self.__handle_depth_track(track)
-                elif self.track_counter == 2:
-                    self.__handle_semantic_track(track)
-
-                self.track_counter += 1
+                self.__handle_stream_tracks(track)
 
     def __setup_datachannel_callbacks(self) -> None:
         @self.pc.on("datachannel")
@@ -113,11 +125,7 @@ class ReceiverPeer(WebRTCClient):
 
             @self.data_channel.on("open")
             async def on_open() -> None:
-                while not self.done.is_set():
-                    action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
-                    print(f"Sending action {action} to provider...")
-                    self.data_channel.send(json.dumps(action))
-                print("Waiting for provider to close data channel...")
+                print("Data channel opened")
 
             @self.data_channel.on("message")
             async def on_message(message: bytes) -> None:
@@ -130,10 +138,6 @@ class ReceiverPeer(WebRTCClient):
                 logging.info("Data channel closed")
                 self.done.set()
 
-            # NOTE: I dont know why this is needed, but without it, on_open() is not called
-            if self.data_channel.readyState == "open":
-                await on_open()
-
     def __set_async_components(
         self,
         component: BaseAsyncComponent,
@@ -141,21 +145,6 @@ class ReceiverPeer(WebRTCClient):
     ) -> None:
         component.set_loop(self.loop)
         component.set_input_queue(queue)
-
-    def __handle_rgb_track(self, track: VideoStreamTrack) -> None:
-        rgb_processor: VideoStreamTrack = RGBProcessor(track)
-        self.__set_async_components(rgb_processor, self.rgb_queue)
-        self.pc.addTrack(rgb_processor)
-
-    def __handle_depth_track(self, track: VideoStreamTrack) -> None:
-        depth_processor: VideoStreamTrack = DepthProcessor(track)
-        self.__set_async_components(depth_processor, self.depth_queue)
-        self.pc.addTrack(depth_processor)
-
-    def __handle_semantic_track(self, track: VideoStreamTrack) -> None:
-        semantic_processor: VideoStreamTrack = SemanticProcessor(track)
-        self.__set_async_components(semantic_processor, self.semantic_queue)
-        self.pc.addTrack(semantic_processor)
 
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
@@ -174,7 +163,10 @@ class ReceiverPeer(WebRTCClient):
             'semantic': semantic_data['semantic'],
         }
         step.update(state)
-        push_to_buffer(self.step_queue, step)
+        await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
+        action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
+        print(f"Sending action {action} to provider...")
+        self.data_channel.send(json.dumps(action))
 
     async def run(self) -> None: # asyncio.run(receiver.run())
         await super().run()

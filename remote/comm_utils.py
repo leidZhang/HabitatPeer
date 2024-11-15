@@ -50,7 +50,7 @@ def rgb_to_rgba(rgb: np.ndarray, alpha: int = 255) -> np.ndarray:
 
 
 def get_frame_from_buffer(buffer: Queue) -> Any:
-    if buffer.empty():
+    if buffer.empty(): # If buffer is empty, directly return None
         time.sleep(0.001)
         return None
     return buffer.get()
@@ -59,6 +59,11 @@ def push_to_buffer(buffer: Queue, data: Any) -> None:
     if buffer.full():
         buffer.get()
     buffer.put(data)
+    
+async def push_to_async_buffer(buffer: asyncio.Queue, data: Any) -> None:
+    if buffer.full():
+        await buffer.get()
+    await buffer.put(data)
 
 def empty_queue(queue: Queue) -> None:
     print(f"Emptying queue with {queue.qsize()} elements")

@@ -18,10 +18,6 @@ def process_step_data(
     loop: asyncio.AbstractEventLoop
 ) -> None:
     while not event.is_set():
-        if step_queue.empty():
-            time.sleep(0.001)
-            continue
-
         step_data: dict = step_queue.get()
         print(f"Color: {step_data['rgb'][0][0]}, PTS: {step_data['pts']}")
         action_queue.put({"action": random.randint(0, 7)})

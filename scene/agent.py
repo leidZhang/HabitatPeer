@@ -29,8 +29,6 @@ class HabitatActuator:
         self.state_queue.put(state.copy())
 
     def __receive_action(self) -> Dict[str, Any]:
-        while self.action_queue.empty():
-            time.sleep(0.001)
         return self.action_queue.get()
 
     def reset(self) -> None:

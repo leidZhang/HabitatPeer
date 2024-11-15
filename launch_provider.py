@@ -2,13 +2,20 @@ import json
 import logging
 import asyncio
 from queue import Queue
+from datetime import datetime
 from threading import Thread, Event
 
+import cv2
 import numpy as np
 
 from remote import ProviderPeer
 from remote.comm_utils import empty_queue
 from scene import HabitatActuator
+
+
+def put_timestamp(image: np.ndarray) -> None:
+    text: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    cv2.putText(image, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
 
 
 def start_habitat(
@@ -37,17 +44,18 @@ def start_habitat(
             break
 
         action = agent.act(observation)
-        print(f"print send {i % 256} to the peer...")
+        print(f"Got {action} and send {(i + 1) % 256} to the peer...")
         observation = {
             "depth": np.random.rand(height, width, 1).astype(np.float32),
             # "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
-            "rgb": np.ones((height, width, 3), dtype=np.uint8) * (i % 256),
+            "rgb": np.ones((height, width, 3), dtype=np.uint8) * ((i + 1) % 256),
             "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
             "gps": np.array([0, 0, 0]),
-            "compass": np.array([0]),
+            "compass": np.array([0])
         }
-        i += 1
+        put_timestamp(observation["rgb"])
         
+        i += 1
         i = 0 if i == 1000 else i # Temporary fix for testing
         
     if not provider_event.is_set():
