@@ -34,7 +34,6 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         # print("Decoding to rgb frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
-        # await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} RGB image put into queue...")
 
         return GARBAGE_FRAME
@@ -52,7 +51,6 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.float32)
         await self.input_queue.put({'depth': image, 'pts': frame.pts})
-        # await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
         return GARBAGE_FRAME
@@ -70,7 +68,6 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.int32)
         await self.input_queue.put({'semantic': image, 'pts': frame.pts})
-        # await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Semantic image put into queue...")
 
         return GARBAGE_FRAME
@@ -78,9 +75,9 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
 
 class ReceiverPeer(WebRTCClient):
     def __init__(
-        self, 
-        signaling_ip: str, 
-        signaling_port: int, 
+        self,
+        signaling_ip: str,
+        signaling_port: int,
         stun_urls: List[str] = None
     ) -> None:
         super().__init__(signaling_ip, signaling_port, stun_urls=stun_urls)
@@ -95,7 +92,7 @@ class ReceiverPeer(WebRTCClient):
         self.state_queue: asyncio.Queue = None
         self.step_queue: Queue = None
         self.action_queue: Queue = None
-    
+
     # TODO: May have to find some way to avoid hard coding the track order
     def __handle_stream_tracks(self, track: VideoStreamTrack) -> None:
             if self.track_counter == 0:
@@ -110,7 +107,7 @@ class ReceiverPeer(WebRTCClient):
             self.__set_async_components(local_track, target_queue)
             self.pc.addTrack(local_track)
 
-            self.track_counter += 1        
+            self.track_counter += 1
 
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")

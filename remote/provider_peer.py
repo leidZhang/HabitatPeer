@@ -16,13 +16,12 @@ from aiortc.contrib.media import MediaBlackhole
 from .comm_utils import (
     BaseAsyncComponent,
     encode_to_rgba,
-    get_frame_from_buffer,
     push_to_buffer,
 )
 from .signaling_utils import WebRTCClient, initiate_signaling
 
 # Copied from aiortc source code
-VIDEO_PTIME = 1 / 30
+VIDEO_PTIME = 1 / 30 # 10
 VIDEO_CLOCK_RATE = 90000
 VIDEO_TIME_BASE = fractions.Fraction(1, VIDEO_CLOCK_RATE)
 
@@ -109,9 +108,9 @@ class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 
 class ProviderPeer(WebRTCClient):
     def __init__(
-        self, 
-        signaling_ip: str, 
-        signaling_port: int, 
+        self,
+        signaling_ip: str,
+        signaling_port: int,
         stun_urls: List[str] = None
     ) -> None:
         super().__init__(signaling_ip, signaling_port, stun_urls=stun_urls)

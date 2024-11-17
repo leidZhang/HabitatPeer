@@ -1,3 +1,4 @@
+import time
 import json
 import logging
 import asyncio
@@ -13,14 +14,10 @@ from remote.comm_utils import empty_queue
 from scene import HabitatActuator
 
 
-def put_timestamp(image: np.ndarray) -> None:
-    text: str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cv2.putText(image, text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
-
-
+# TODO: Replace it with real habitat env
 def start_habitat(
-    agent: HabitatActuator, 
-    provider_event: asyncio.Event, 
+    agent: HabitatActuator,
+    provider_event: asyncio.Event,
     width: int = 640,
     height: int = 480
 ) -> None:
@@ -28,8 +25,7 @@ def start_habitat(
 
     observation = {
         "depth": np.random.rand(height, width, 1).astype(np.float32),
-        # "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
-        "rgb": np.zeros((height, width, 3), dtype=np.uint8),
+        "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
         "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
         "gps": np.array([0, 0, 0]),
         "compass": np.array([0]),
@@ -47,17 +43,15 @@ def start_habitat(
         print(f"Got {action} and send {(i + 1) % 256} to the peer...")
         observation = {
             "depth": np.random.rand(height, width, 1).astype(np.float32),
-            # "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
-            "rgb": np.ones((height, width, 3), dtype=np.uint8) * ((i + 1) % 256),
+            "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
             "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
             "gps": np.array([0, 0, 0]),
             "compass": np.array([(i + 1) % 256])
         }
-        put_timestamp(observation["rgb"])
-        
+
         i += 1
         i = 0 if i == 1000 else i # Temporary fix for testing
-        
+
     if not provider_event.is_set():
         provider_event.set() # signal provider to stop
     # loop.stop()
@@ -68,7 +62,7 @@ if __name__ == "__main__":
     # logging.basicConfig(level=logging.INFO)
     with open("ip_configs.json", "r") as f:
         config: dict = json.load(f)
-    
+
     provider: ProviderPeer = ProviderPeer(config['signaling_ip'], config['port'], config['stun_url'])
     agent: HabitatActuator = HabitatActuator()
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()

@@ -21,9 +21,9 @@ def process_step_data(
         step_data: dict = step_queue.get()
         print(f"Color: {step_data['rgb'][0][0]}, PTS: {step_data['pts']}")
         action_queue.put({"action": random.randint(0, 7)})
-        # cv2.imshow("RGB received", step_data["rgb"])
-        # cv2.imshow("Depth received", step_data["depth"])
-        # cv2.waitKey(1)
+        cv2.imshow("RGB received", step_data["rgb"])
+        cv2.imshow("Depth received", step_data["depth"])
+        cv2.waitKey(1)
 
     loop.stop()
     print("Test complete, waiting for finish...")
