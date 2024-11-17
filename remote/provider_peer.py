@@ -180,14 +180,15 @@ class ProviderPeer(WebRTCClient):
             self.done.set()
 
     async def run(self) -> None:
-        await super().run()
-        self.__setup_track_callbacks()
-        self.__setup_datachannel_callbacks()
-        await initiate_signaling(self.pc, self.signaling)
+        while not self.disconnected.is_set():
+            await super().run()
+            self.__setup_track_callbacks()
+            self.__setup_datachannel_callbacks()
+            await initiate_signaling(self.pc, self.signaling)
 
-        await self.done.wait()
-        await self.pc.close()
-        await self.signaling.close()
+            await self.done.wait()
+            await self.pc.close()
+            await self.signaling.close()
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop

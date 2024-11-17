@@ -15,12 +15,15 @@ from .comm_utils import (
     BaseAsyncComponent,
     decode_from_rgba,
     push_to_buffer,
-    push_to_async_buffer
+    empty_async_queue,
+    empty_queue
 )
 
 GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((1, 1, 3), dtype=np.uint8), format="rgb24")
 GARBAGE_FRAME.pts = 0
 GARBAGE_FRAME.time_base = fractions.Fraction(1, 90000)
+ASYNC_QUEUE_NAMES: List[str] = ['rgb', 'depth','semantic','state']
+QUEUE_NAMES: List[str] = ['action', 'step']
 
 
 class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -30,7 +33,7 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
 
     async def recv(self) -> VideoFrame:
         # print("Receiving RGB frame...")
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
         # print("Decoding to rgb frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         await self.input_queue.put({'rgb': image, 'pts': frame.pts})
@@ -46,7 +49,7 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
 
     async def recv(self) -> VideoFrame:
         # print("Receiving Depth frame...")
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
         # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.float32)
@@ -63,7 +66,7 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
 
     async def recv(self) -> VideoFrame:
         # print("Receiving Semantic frame...")
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 5 seconds timeout
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
         # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgba")
         image = decode_from_rgba(image, np.int32)
@@ -107,7 +110,7 @@ class ReceiverPeer(WebRTCClient):
             self.__set_async_components(local_track, target_queue)
             self.pc.addTrack(local_track)
 
-            self.track_counter += 1
+            self.track_counter = (self.track_counter + 1) % 3
 
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")
@@ -129,6 +132,7 @@ class ReceiverPeer(WebRTCClient):
                 print(f"Received message: {message} for provider...")
                 state: Dict[str, Any] = json.loads(message)
                 await self.syncronize_to_step(state)
+                await self.send_action()
 
             @self.data_channel.on("close")
             def on_close() -> None:
@@ -161,19 +165,29 @@ class ReceiverPeer(WebRTCClient):
         }
         step.update(state)
         await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
+
+    async def send_action(self) -> None:
         action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
         print(f"Sending action {action} to provider...")
         self.data_channel.send(json.dumps(action))
 
     async def run(self) -> None: # asyncio.run(receiver.run())
-        await super().run()
-        self.__setup_track_callbacks()
-        self.__setup_datachannel_callbacks()
-        await receive_signaling(self.pc, self.signaling)
+        while not self.disconnected.set():
+            await super().run()
+            self.__setup_track_callbacks()
+            self.__setup_datachannel_callbacks()
+            await receive_signaling(self.pc, self.signaling)
 
-        await self.done.wait()
-        await self.pc.close()
-        await self.signaling.close()
+            await self.done.wait()
+            await self.pc.close()
+            await empty_async_queue(self.rgb_queue)
+            await self.signaling.close()
+
+    async def clear_queues(self) -> None:
+        for queue_name in ASYNC_QUEUE_NAMES:
+            await empty_async_queue(getattr(self, f"{queue_name}_queue"))
+        for queue_name in QUEUE_NAMES:
+            empty_queue(getattr(self, f"{queue_name}_queue"))
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop

@@ -55,16 +55,17 @@ class WebRTCClient(ABC):
         self,
         signaling_ip: str,
         signaling_port: int,
-        type: str = "websocket",
+        signaling_type: str = "websocket",
         stun_urls: List[str] = None,
     ) -> None:
         self.ice_connection_state: str = "new"
         self.done: asyncio.Event = asyncio.Event()
+        self.disconnected: asyncio.Event = asyncio.Event()
+
         self.stun_urls: List[str] = stun_urls
-
-        self.__get_signaling(signaling_ip, signaling_port, type)
-        self.__handle_stun_setup()
-
+        self.signaling_ip: str = signaling_ip
+        self.signaling_port: int = signaling_port
+        self.signaling_type: str = signaling_type
 
     def __get_signaling(self, signaling_ip: str, signaling_port: int, type: str) -> None:
         if type == "websocket":
@@ -106,6 +107,16 @@ class WebRTCClient(ABC):
                 await self.signaling.close()
 
     async def run(self) -> None:
+        # Set up signaling and ICE connection
+        self.__get_signaling(
+            self.signaling_ip,
+            self.signaling_port,
+            self.signaling_type
+        )
+        self.__handle_stun_setup()
+        # If reconnect, clear the done event
+        if self.done.is_set():
+            self.done.clear()
         await self.__setup()
 
     def stop(self) -> None:
