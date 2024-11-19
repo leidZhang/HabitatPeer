@@ -6,7 +6,7 @@ from typing import Any, Union
 
 import numpy as np
 from av import VideoFrame
-from aiortc import VideoStreamTrack
+from aiortc import RTCRtpSender, RTCPeerConnection, RTCRtpCapabilities
 
 RGBA_CHANNELS: int = 4
 LABEL_MAP_CHANNELS: int = 1
@@ -31,22 +31,36 @@ def encode_to_rgba(image: np.ndarray) -> np.ndarray:
 
     return image.view(np.uint8).reshape(height, width, RGBA_CHANNELS)
 
-def decode_from_rgba(rgba: np.ndarray, data_type: np.dtype) -> np.ndarray:
-    if rgba.shape[2] != 4:
-        raise InvalidImageShapeError("RGBA image must have 4 channels")
-    if data_type not in [np.float32, np.int32]:
-        raise InvalidDataTypeError("Data type must be float32 or int32")
+def decode_to_semantic(image: np.ndarray) -> np.ndarray: # a -> high 1, b -> high 2, g -> low 2, r -> low 1
+    if image.shape[2] != 3:
+        raise InvalidImageShapeError("Input image must have 3 channels")
+    if image.dtype != np.uint8:
+        raise InvalidDataTypeError("Input image must be of type uint8")
 
-    return rgba.view(data_type).reshape(rgba.shape[0], rgba.shape[1], LABEL_MAP_CHANNELS)
+    # Since we dropped the alpha channel, we need to add it back
+    empty_channel: np.ndarray = np.zeros((image.shape[0], image.shape[1], 1), dtype=np.uint8)
+    decoded_rgba: np.ndarray = np.concatenate((image, empty_channel), axis=-1)
+    return decoded_rgba.view(np.int32).reshape(image.shape[0], image.shape[1], LABEL_MAP_CHANNELS)
 
-def rgb_to_rgba(rgb: np.ndarray, alpha: int = 255) -> np.ndarray:
-    if alpha < 0 or alpha > 255:
-        raise ValueError("Alpha channel must be between 0 and 255")
-    if rgb.shape[-1] != 3:
-        raise InvalidImageShapeError("RGB image must have 3 channels")
+def decode_to_depth(image: np.ndarray) -> np.ndarray: # a -> high 1, b -> high 2, g -> low 2, r -> low 1
+    if image.shape[2] != 3:
+        raise InvalidImageShapeError("Input image must have 3 channels")
+    if image.dtype != np.uint8:
+        raise InvalidDataTypeError("Input image must be of type uint8")
 
-    alpha_channel: np.ndarray = np.ones((rgb.shape[0], rgb.shape[1], 1), dtype=np.uint8) * alpha
-    return np.concatenate((rgb, alpha_channel), axis=-1)
+    # Since we dropped the r channel, we need to add it back
+    empty_channel: np.ndarray = np.zeros((image.shape[0], image.shape[1], 1), dtype=np.uint8)
+    decoded_rgba: np.ndarray = np.concatenate((empty_channel, image), axis=-1)
+    return decoded_rgba.view(np.float32).reshape(image.shape[0], image.shape[1], LABEL_MAP_CHANNELS)
+
+
+def force_codec(pc: RTCPeerConnection, sender: RTCRtpSender, forced_codec: str = "video/H264") -> None:
+    kind: str = forced_codec.split("/")[0]
+    codecs = RTCRtpSender.getCapabilities(kind).codecs
+    transceiver = next(t for t in pc.getTransceivers() if t.sender == sender)
+    transceiver.setCodecPreferences(
+        [codec for codec in codecs if codec.mimeType == forced_codec]
+    )
 
 
 def get_frame_from_buffer(buffer: Queue) -> Any:
@@ -59,7 +73,7 @@ def push_to_buffer(buffer: Queue, data: Any) -> None:
     if buffer.full():
         buffer.get()
     buffer.put(data)
-    
+
 async def push_to_async_buffer(buffer: asyncio.Queue, data: Any) -> None:
     if buffer.full():
         await buffer.get()

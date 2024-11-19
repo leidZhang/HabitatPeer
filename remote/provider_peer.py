@@ -10,18 +10,19 @@ from typing import Tuple, Dict, Any, List
 import cv2
 import numpy as np
 from av import VideoFrame
-from aiortc import RTCDataChannel, VideoStreamTrack
+from aiortc import RTCDataChannel, VideoStreamTrack, RTCRtpSender
 from aiortc.contrib.media import MediaBlackhole
 
 from .comm_utils import (
     BaseAsyncComponent,
     encode_to_rgba,
     push_to_buffer,
+    force_codec
 )
 from .signaling_utils import WebRTCClient, initiate_signaling
 
 # Copied from aiortc source code
-VIDEO_PTIME = 1 / 30 # 10
+VIDEO_PTIME = 1 / 5 # 30
 VIDEO_CLOCK_RATE = 90000
 VIDEO_TIME_BASE = fractions.Fraction(1, VIDEO_CLOCK_RATE)
 
@@ -82,25 +83,56 @@ class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         return video_frame
 
 
-class RGBAStreamTrack(VideoStreamTrack, BaseAsyncComponent):
+class DepthStreamTrack(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self) -> None:
         super().__init__()
-        self.last_frame: np.ndarray = np.zeros((480, 640, 4), dtype=np.uint8)
+        self.last_image: np.ndarray = np.zeros((480, 640, 4), dtype=np.uint8)
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
 
         # Convert frame to RGBA
         if self.input_queue.qsize() > 0:
-            frame: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
-            frame = encode_to_rgba(frame) # Use 4 channels to store int32 or float32
-            frame = np.ascontiguousarray(frame) # Make sure frame is contiguous in memory
-            self.last_frame = frame # Update last frame
+            image: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
+            image = encode_to_rgba(image) # Use 4 channels to store int32 or float32
+            print(f"RGBA Image {image[0][0]}")
+            image = image[:, :, 1:]
+            print(f"RGB Image {image[0][0]}")
+            # image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # drop red channel since it is hight 8 bits
+            image = np.ascontiguousarray(image) # Make sure frame is contiguous in memory
+            self.last_image = image # Update last frame
         else:
-            frame = self.last_frame # send the last frame if is not ready yet
+            image = self.last_image # send the last frame if is not ready yet
 
         # Create VideoFrame
-        video_frame: VideoFrame = VideoFrame.from_ndarray(frame, format="rgba")
+        video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
+        video_frame.pts, video_frame.time_base = pts, time_base
+        print(f"VideoFrame PTS: {video_frame.pts}")
+
+        return video_frame
+
+
+class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_image: np.ndarray = np.zeros((480, 640, 4), dtype=np.uint8)
+
+    async def recv(self) -> VideoFrame:
+        pts, time_base = await self.next_timestamp()
+
+        # Convert frame to RGBA
+        if self.input_queue.qsize() > 0:
+            image: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
+            image = encode_to_rgba(image) # Use 4 channels to store int32 or float32
+            # image = cv2.cvtColor(image[:, :, :3], cv2.COLOR_RGB2BGR) # drop alpha channel since it is hight 8 bits
+            image = image[:, :, :3]
+            image = np.ascontiguousarray(image) # Make sure frame is contiguous in memory
+            self.last_image = image # Update last frame
+        else:
+            image = self.last_image # send the last frame if is not ready yet
+
+        # Create VideoFrame
+        video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
         video_frame.pts, video_frame.time_base = pts, time_base
 
         return video_frame
@@ -145,15 +177,18 @@ class ProviderPeer(WebRTCClient):
 
         rgb_track: VideoStreamTrack = RGBStreamTrack()
         self.__set_async_components(rgb_track, self.rgb_queue)
-        self.pc.addTrack(rgb_track)
+        rgb_sender: RTCRtpSender = self.pc.addTrack(rgb_track)
+        force_codec(self.pc, rgb_sender)
 
-        depth_track: VideoStreamTrack = RGBAStreamTrack()
+        depth_track: VideoStreamTrack = DepthStreamTrack()
         self.__set_async_components(depth_track, self.depth_queue)
-        self.pc.addTrack(depth_track)
+        depth_sender: RTCRtpSender = self.pc.addTrack(depth_track)
+        force_codec(self.pc, depth_sender)
 
-        semantic_track: VideoStreamTrack = RGBAStreamTrack()
+        semantic_track: VideoStreamTrack = SemanticStreamTrack()
         self.__set_async_components(semantic_track, self.semantic_queue)
-        self.pc.addTrack(semantic_track)
+        semantic_sender: RTCRtpSender = self.pc.addTrack(semantic_track)
+        force_codec(self.pc, semantic_sender)
 
     def __setup_datachannel_callbacks(self) -> None:
         self.data_channel = self.pc.createDataChannel("datachannel")

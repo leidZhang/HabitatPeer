@@ -6,20 +6,23 @@ import fractions
 from queue import Queue
 from typing import Dict, Any, List
 
+import cv2
 import numpy as np
 from av import VideoFrame
-from aiortc import RTCDataChannel, VideoStreamTrack
+from aiortc import RTCDataChannel, VideoStreamTrack, RTCRtpSender
 
 from .signaling_utils import WebRTCClient, receive_signaling
 from .comm_utils import (
     BaseAsyncComponent,
-    decode_from_rgba,
+    decode_to_depth,
+    decode_to_semantic,
+    force_codec,
     push_to_buffer,
     empty_async_queue,
     empty_queue
 )
 
-GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((1, 1, 3), dtype=np.uint8), format="rgb24")
+GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((2, 2, 3), dtype=np.uint8), format="rgb24")
 GARBAGE_FRAME.pts = 0
 GARBAGE_FRAME.time_base = fractions.Fraction(1, 90000)
 ASYNC_QUEUE_NAMES: List[str] = ['rgb', 'depth','semantic','state']
@@ -51,8 +54,13 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         # print("Receiving Depth frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
         # print("Decoding to rgba frame...")
-        image: np.ndarray = frame.to_ndarray(format="rgba")
-        image = decode_from_rgba(image, np.float32)
+        image: np.ndarray = frame.to_ndarray(format="rgb24")
+        print(f"Received bgr {image[0][0]}")
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        print(f"Received rgb {image[0][0]}")
+        image = decode_to_depth(image)
+
+        print(f"Decoded depth image {image[0][0]}")
         await self.input_queue.put({'depth': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
@@ -68,8 +76,9 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         # print("Receiving Semantic frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
         # print("Decoding to rgba frame...")
-        image: np.ndarray = frame.to_ndarray(format="rgba")
-        image = decode_from_rgba(image, np.int32)
+        image: np.ndarray = frame.to_ndarray(format="rgb24")
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = decode_to_semantic(image)
         await self.input_queue.put({'semantic': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Semantic image put into queue...")
 
@@ -108,7 +117,8 @@ class ReceiverPeer(WebRTCClient):
                 local_track: VideoStreamTrack = SemanticProcessor(track)
                 target_queue: asyncio.Queue = self.semantic_queue
             self.__set_async_components(local_track, target_queue)
-            self.pc.addTrack(local_track)
+            sender: RTCRtpSender =self.pc.addTrack(local_track)
+            force_codec(self.pc, sender, "video/H264")
 
             self.track_counter = (self.track_counter + 1) % 3
 

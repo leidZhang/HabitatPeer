@@ -5,6 +5,7 @@ import asyncio
 from queue import Queue
 from datetime import datetime
 from threading import Thread, Event
+from typing import List, Dict
 
 import cv2
 import numpy as np
@@ -22,16 +23,16 @@ def start_habitat(
     height: int = 480
 ) -> None:
     print("initializing habitat env...")
+    data: Dict[str, List[np.ndarray]] = np.load("demo/test_data.npz", allow_pickle=True)
+    mock_observations: List[Dict[str, np.ndarray]] = []
+    for i in range(len(data['depth'])):
+        observation: Dict[str, np.ndarray] = {}
+        for key in data.keys():
+            observation[key] = data[key][i]
+        mock_observations.append(observation)
 
-    observation = {
-        "depth": np.random.rand(height, width, 1).astype(np.float32),
-        "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
-        "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
-        "gps": np.array([0, 0, 0]),
-        "compass": np.array([0]),
-    }
+    observation = mock_observations[0]
     agent.reset()
-
     i = 0
     while i < 1000:
         # make sure not stuck here forever
@@ -39,18 +40,13 @@ def start_habitat(
             print("Detected provider stop event, exiting...")
             break
 
+        # get action from agent
         action = agent.act(observation)
         print(f"Got {action} and send {(i + 1) % 256} to the peer...")
-        observation = {
-            "depth": np.random.rand(height, width, 1).astype(np.float32),
-            "rgb": np.random.randint(0, 255, size=(height, width, 3), dtype=np.uint8),
-            "semantic": np.random.randint(0, 640, size=(height, width, 1), dtype=np.int32),
-            "gps": np.array([0, 0, 0]),
-            "compass": np.array([(i + 1) % 256])
-        }
-
-        i += 1
-        i = 0 if i == 1000 else i # Temporary fix for testing
+        i = (i + 1) % 10 # infinite loop for testing
+        observation = mock_observations[i]
+        print(f"Received action {action}")
+        print("==========================")
 
     if not provider_event.is_set():
         provider_event.set() # signal provider to stop
