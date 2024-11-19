@@ -52,5 +52,5 @@ if __name__ == "__main__":
     queue_list: List[Queue] = [Queue(maxsize=1) for _ in range(5)]
     habitat_process: Process = Process(target=start_habitat_env, args=(queue_list,))
     aiortc_process: Process = Process(target=start_aiortc_client, args=(queue_list,))
-    aiortc_process.start()
-    habitat_process.start()
+    aiortc_process.start() # start the webRTC client
+    habitat_process.start() # start the habitat environment

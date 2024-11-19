@@ -15,7 +15,6 @@ from .signaling_utils import WebRTCClient, receive_signaling
 from .comm_utils import (
     BaseAsyncComponent,
     decode_to_depth,
-    decode_to_semantic,
     force_codec,
     push_to_buffer,
     empty_async_queue,
@@ -55,34 +54,31 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
         # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
-        print(f"Received bgr {image[0][0]}")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        print(f"Received rgb {image[0][0]}")
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = decode_to_depth(image)
 
-        print(f"Decoded depth image {image[0][0]}")
         await self.input_queue.put({'depth': image, 'pts': frame.pts})
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
         return GARBAGE_FRAME
 
 
-class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
-    def __init__(self, track: VideoStreamTrack) -> None:
-        super().__init__()
-        self.track: VideoStreamTrack = track
+# class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
+#     def __init__(self, track: VideoStreamTrack) -> None:
+#         super().__init__()
+#         self.track: VideoStreamTrack = track
 
-    async def recv(self) -> VideoFrame:
-        # print("Receiving Semantic frame...")
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
-        # print("Decoding to rgba frame...")
-        image: np.ndarray = frame.to_ndarray(format="rgb24")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = decode_to_semantic(image)
-        await self.input_queue.put({'semantic': image, 'pts': frame.pts})
-        # print(f"PTS: {frame.pts} Semantic image put into queue...")
+#     async def recv(self) -> VideoFrame:
+#         # print("Receiving Semantic frame...")
+#         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
+#         # print("Decoding to rgba frame...")
+#         image: np.ndarray = frame.to_ndarray(format="rgb24")
+#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+#         image = decode_to_semantic(image)
+#         await self.input_queue.put({'semantic': image, 'pts': frame.pts})
+#         # print(f"PTS: {frame.pts} Semantic image put into queue...")
 
-        return GARBAGE_FRAME
+#         return GARBAGE_FRAME
 
 
 class ReceiverPeer(WebRTCClient):
@@ -100,7 +96,7 @@ class ReceiverPeer(WebRTCClient):
         # Queues for each stream/track
         self.depth_queue: asyncio.Queue = None
         self.rgb_queue: asyncio.Queue = None
-        self.semantic_queue: asyncio.Queue = None
+        # self.semantic_queue: asyncio.Queue = None
         self.state_queue: asyncio.Queue = None
         self.step_queue: Queue = None
         self.action_queue: Queue = None
@@ -113,14 +109,14 @@ class ReceiverPeer(WebRTCClient):
             elif self.track_counter == 1:
                 local_track: VideoStreamTrack = DepthProcessor(track)
                 target_queue: asyncio.Queue = self.depth_queue
-            elif self.track_counter == 2:
-                local_track: VideoStreamTrack = SemanticProcessor(track)
-                target_queue: asyncio.Queue = self.semantic_queue
+            # elif self.track_counter == 2:
+            #     local_track: VideoStreamTrack = SemanticProcessor(track)
+            #     target_queue: asyncio.Queue = self.semantic_queue
             self.__set_async_components(local_track, target_queue)
             sender: RTCRtpSender =self.pc.addTrack(local_track)
             force_codec(self.pc, sender, "video/H264")
 
-            self.track_counter = (self.track_counter + 1) % 3
+            self.track_counter = (self.track_counter + 1) % 2 # 3
 
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")
@@ -163,15 +159,15 @@ class ReceiverPeer(WebRTCClient):
         logging.info("Synchronizing data...")
         rgb_data: Dict[str, Any] = await self.rgb_queue.get()
         depth_data: Dict[str, Any] = await self.depth_queue.get()
-        semantic_data: Dict[str, Any] = await self.semantic_queue.get()
+        # semantic_data: Dict[str, Any] = await self.semantic_queue.get()
         # state: Dict[str, Any] = await self.state_queue.get()
 
         # if max_pts - min_pts <= 100:
-        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
+        print(rgb_data['pts'], depth_data['pts'], state['pts'])
         step: Dict[str, Any] = {
             'rgb': rgb_data['rgb'],
             'depth': depth_data['depth'],
-            'semantic': semantic_data['semantic'],
+            # 'semantic': semantic_data['semantic'],
         }
         step.update(state)
         await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)

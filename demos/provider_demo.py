@@ -23,7 +23,7 @@ def start_habitat(
     height: int = 480
 ) -> None:
     print("initializing habitat env...")
-    data: Dict[str, List[np.ndarray]] = np.load("demo/test_data.npz", allow_pickle=True)
+    data: Dict[str, List[np.ndarray]] = np.load("demos/test_data.npz", allow_pickle=True)
     mock_observations: List[Dict[str, np.ndarray]] = []
     for i in range(len(data['depth'])):
         observation: Dict[str, np.ndarray] = {}
@@ -62,7 +62,7 @@ if __name__ == "__main__":
     provider: ProviderPeer = ProviderPeer(config['signaling_ip'], config['port'], config['stun_url'])
     agent: HabitatActuator = HabitatActuator()
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
-    queue_names: list = ["depth", "rgb", "semantic", "state", "action"]
+    queue_names: list = ["depth", "rgb", "state", "action"]
     queue_list: list = []
 
     provider.set_loop(loop)

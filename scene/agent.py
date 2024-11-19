@@ -10,10 +10,9 @@ class HabitatActuator:
     Will be deployed in the computer with the habitat simulator.
     '''
 
-    CHANNELS: List[str] = ["rgb", "depth", "semantic"]
+    CHANNELS: List[str] = ["rgb", "depth"]
 
     def __init__(self) -> None:
-        self.semantic_queue: Queue = None
         self.rgb_queue: Queue = None
         self.depth_queue: Queue = None
         self.state_queue: Queue = None
@@ -25,7 +24,8 @@ class HabitatActuator:
             # observations.pop(channel)
 
         # Convert the Observations object to a dictionary to avoid pickling issues
-        state: dict = {key: observations[key].tolist() for key in observations.keys() if key not in self.CHANNELS}
+        # TODO: Delete the semantic key check later
+        state: dict = {key: observations[key].tolist() for key in observations.keys() if key not in self.CHANNELS and key != 'semantic'}
         self.state_queue.put(state.copy())
 
     def __receive_action(self) -> Dict[str, Any]:
