@@ -63,24 +63,6 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         return GARBAGE_FRAME
 
 
-# class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
-#     def __init__(self, track: VideoStreamTrack) -> None:
-#         super().__init__()
-#         self.track: VideoStreamTrack = track
-
-#     async def recv(self) -> VideoFrame:
-#         # print("Receiving Semantic frame...")
-#         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
-#         # print("Decoding to rgba frame...")
-#         image: np.ndarray = frame.to_ndarray(format="rgb24")
-#         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-#         image = decode_to_semantic(image)
-#         await self.input_queue.put({'semantic': image, 'pts': frame.pts})
-#         # print(f"PTS: {frame.pts} Semantic image put into queue...")
-
-#         return GARBAGE_FRAME
-
-
 class ReceiverPeer(WebRTCClient):
     def __init__(
         self,
