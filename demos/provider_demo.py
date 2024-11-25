@@ -62,7 +62,7 @@ if __name__ == "__main__":
     provider: ProviderPeer = ProviderPeer(config['signaling_ip'], config['port'], config['stun_url'])
     agent: HabitatActuator = HabitatActuator()
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
-    queue_names: list = ["depth", "rgb", "state", "action"]
+    queue_names: list = ["depth", "rgb", "state", "action", "semantic"]
     queue_list: list = []
 
     provider.set_loop(loop)

@@ -37,7 +37,7 @@ if __name__ == "__main__":
 
     receiver: ReceiverPeer = ReceiverPeer(config['signaling_ip'], config['port'], config['stun_url'])
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
-    async_queue_names: list = ["rgb", "depth", "state"]
+    async_queue_names: list = ["rgb", "depth", "state", "semantic"]
     queue_names: list = ["action", "step"]
 
     receiver.set_loop(loop)

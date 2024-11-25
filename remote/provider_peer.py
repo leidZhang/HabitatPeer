@@ -86,17 +86,47 @@ class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 class DepthStreamTrack(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self) -> None:
         super().__init__()
-        self.last_image: np.ndarray = np.zeros((480, 640, 4), dtype=np.uint8)
+        self.last_image: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
 
-        # Convert frame to RGBA
+        # Convert to RGB
         if self.input_queue.qsize() > 0:
             depth: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
             image: np.ndarray = (depth * 255).astype(np.uint8) # Denormalize depth to 8 bits
             image = np.repeat(image, 3, axis=-1) # Expand to 3 channels to increase the redundancy
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR) # drop red channel since it is hight 8 bits
+            image = np.ascontiguousarray(image) # Make sure frame is contiguous in memory
+            self.last_image = image # Update last frame
+        else:
+            image = self.last_image # send the last frame if is not ready yet
+
+        # Create VideoFrame
+        video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
+        video_frame.pts, video_frame.time_base = pts, time_base
+        print(f"VideoFrame PTS: {video_frame.pts}")
+
+        return video_frame
+    
+
+class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
+    def __init__(self) -> None:
+        super().__init__()
+        self.last_image: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
+        
+    async def recv(self) -> VideoFrame:
+        pts, time_base = await self.next_timestamp()
+
+        # Convert to RGB
+        if self.input_queue.qsize() > 0:
+            semantic: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
+            image: np.ndarray = np.repeat(semantic, 3, axis=-1)
+            image[:, :, 2] = image[:, :, 2] % 10 
+            image[:, :, 1] = (image[:, :, 1] // 10) % 10
+            image[:, :, 0] = image[:, :, 0] // 100
+            image = (image * 255).astype(np.uint8)
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             image = np.ascontiguousarray(image) # Make sure frame is contiguous in memory
             self.last_image = image # Update last frame
         else:
@@ -130,6 +160,17 @@ class ProviderPeer(WebRTCClient):
         self.state_queue: Queue = None
         self.action_queue: Queue = None
 
+    async def run(self) -> None:
+        while not self.disconnected.is_set():
+            await super().run()
+            self.__setup_track_callbacks()
+            self.__setup_datachannel_callbacks()
+            await initiate_signaling(self.pc, self.signaling)
+
+            await self.done.wait()
+            await self.pc.close()
+            await self.signaling.close()
+
     def __set_async_components(
         self,
         component: BaseAsyncComponent,
@@ -157,6 +198,11 @@ class ProviderPeer(WebRTCClient):
         depth_sender: RTCRtpSender = self.pc.addTrack(depth_track)
         force_codec(self.pc, depth_sender)
 
+        semantic_track: VideoStreamTrack = SemanticStreamTrack()
+        self.__set_async_components(semantic_track, self.semantic_queue)
+        semantic_sender: RTCRtpSender = self.pc.addTrack(semantic_track)
+        force_codec(self.pc, semantic_sender)
+
     def __setup_datachannel_callbacks(self) -> None:
         self.data_channel = self.pc.createDataChannel("datachannel")
         self.data_sender: StateSender = StateSender(self.data_channel)
@@ -180,17 +226,6 @@ class ProviderPeer(WebRTCClient):
         def on_close() -> None:
             logging.info("Data channel closed")
             self.done.set()
-
-    async def run(self) -> None:
-        while not self.disconnected.is_set():
-            await super().run()
-            self.__setup_track_callbacks()
-            self.__setup_datachannel_callbacks()
-            await initiate_signaling(self.pc, self.signaling)
-
-            await self.done.wait()
-            await self.pc.close()
-            await self.signaling.close()
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop

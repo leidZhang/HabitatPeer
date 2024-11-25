@@ -10,6 +10,7 @@ from aiortc import RTCRtpSender, RTCPeerConnection, RTCRtpCapabilities
 
 RGBA_CHANNELS: int = 4
 LABEL_MAP_CHANNELS: int = 1
+WEIGHTS: np.ndarray = np.array([100, 10, 1])
 
 
 class InvalidImageShapeError(Exception):
@@ -31,16 +32,16 @@ def encode_to_rgba(image: np.ndarray) -> np.ndarray:
 
     return image.view(np.uint8).reshape(height, width, RGBA_CHANNELS)
 
-# def decode_to_semantic(image: np.ndarray) -> np.ndarray: # a -> high 1, b -> high 2, g -> low 2, r -> low 1
-#     if image.shape[2] != 3:
-#         raise InvalidImageShapeError("Input image must have 3 channels")
-#     if image.dtype != np.uint8:
-#         raise InvalidDataTypeError("Input image must be of type uint8")
+def decode_to_semantic(image: np.ndarray) -> np.ndarray:
+    if image.shape[2] != 3:
+        raise InvalidImageShapeError("Input image must have 3 channels")
+    if image.dtype != np.uint8:
+        raise InvalidDataTypeError("Input image must be of type uint8")
 
-#     # Since we dropped the alpha channel, we need to add it back
-#     empty_channel: np.ndarray = np.zeros((image.shape[0], image.shape[1], 1), dtype=np.uint8)
-#     decoded_rgba: np.ndarray = np.concatenate((image, empty_channel), axis=-1)
-#     return decoded_rgba.view(np.int32).reshape(image.shape[0], image.shape[1], LABEL_MAP_CHANNELS)
+    decoded_rgb: np.ndarray = image.astype(np.float32) / 20
+    decoded_rgb = np.round(decoded_rgb)
+    decoded_rgb = np.dot(decoded_rgb, WEIGHTS).reshape(decoded_rgb.shape[0], decoded_rgb.shape[1], 1)
+    return decoded_rgb.astype(np.int32)
 
 def decode_to_depth(image: np.ndarray) -> np.ndarray:
     if image.shape[2] != 3:

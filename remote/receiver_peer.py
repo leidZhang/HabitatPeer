@@ -15,6 +15,7 @@ from .signaling_utils import WebRTCClient, receive_signaling
 from .comm_utils import (
     BaseAsyncComponent,
     decode_to_depth,
+    decode_to_semantic,
     force_codec,
     push_to_buffer,
     empty_async_queue,
@@ -61,6 +62,25 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
         return GARBAGE_FRAME
+    
+
+class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
+    def __init__(self, track: VideoStreamTrack) -> None:
+        super().__init__()
+        self.track: VideoStreamTrack = track
+
+    async def recv(self) -> VideoFrame:
+        # print("Receiving Semantic frame...")
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
+        # print("Decoding to rgba frame...")
+        image: np.ndarray = frame.to_ndarray(format="rgb24")
+        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = decode_to_semantic(image)
+
+        await self.input_queue.put({'semantic': image, 'pts': frame.pts})
+        # print(f"PTS: {frame.pts} Semantic image put into queue...")
+
+        return GARBAGE_FRAME
 
 
 class ReceiverPeer(WebRTCClient):
@@ -78,10 +98,52 @@ class ReceiverPeer(WebRTCClient):
         # Queues for each stream/track
         self.depth_queue: asyncio.Queue = None
         self.rgb_queue: asyncio.Queue = None
-        # self.semantic_queue: asyncio.Queue = None
+        self.semantic_queue: asyncio.Queue = None
         self.state_queue: asyncio.Queue = None
         self.step_queue: Queue = None
         self.action_queue: Queue = None
+
+    # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
+    async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
+        # while not self.done.is_set():
+        logging.info("Synchronizing data...")
+        rgb_data: Dict[str, Any] = await self.rgb_queue.get()
+        depth_data: Dict[str, Any] = await self.depth_queue.get()
+        semantic_data: Dict[str, Any] = await self.semantic_queue.get()
+        # state: Dict[str, Any] = await self.state_queue.get()
+
+        # if max_pts - min_pts <= 100:
+        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
+        step: Dict[str, Any] = {
+            'rgb': rgb_data['rgb'],
+            'depth': depth_data['depth'],
+            'semantic': semantic_data['semantic'],
+        }
+        step.update(state)
+        await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
+
+    async def send_action(self) -> None:
+        action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
+        print(f"Sending action {action} to provider...")
+        self.data_channel.send(json.dumps(action))
+
+    async def run(self) -> None: # asyncio.run(receiver.run())
+        while not self.disconnected.set():
+            await super().run()
+            self.__setup_track_callbacks()
+            self.__setup_datachannel_callbacks()
+            await receive_signaling(self.pc, self.signaling)
+
+            await self.done.wait()
+            await self.pc.close()
+            await empty_async_queue(self.rgb_queue)
+            await self.signaling.close()
+
+    async def clear_queues(self) -> None:
+        for queue_name in ASYNC_QUEUE_NAMES:
+            await empty_async_queue(getattr(self, f"{queue_name}_queue"))
+        for queue_name in QUEUE_NAMES:
+            empty_queue(getattr(self, f"{queue_name}_queue"))
 
     # TODO: May have to find some way to avoid hard coding the track order
     def __handle_stream_tracks(self, track: VideoStreamTrack) -> None:
@@ -91,14 +153,14 @@ class ReceiverPeer(WebRTCClient):
             elif self.track_counter == 1:
                 local_track: VideoStreamTrack = DepthProcessor(track)
                 target_queue: asyncio.Queue = self.depth_queue
-            # elif self.track_counter == 2:
-            #     local_track: VideoStreamTrack = SemanticProcessor(track)
-            #     target_queue: asyncio.Queue = self.semantic_queue
+            elif self.track_counter == 2:
+                local_track: VideoStreamTrack = SemanticProcessor(track)
+                target_queue: asyncio.Queue = self.semantic_queue
             self.__set_async_components(local_track, target_queue)
             sender: RTCRtpSender =self.pc.addTrack(local_track)
             force_codec(self.pc, sender, "video/H264")
 
-            self.track_counter = (self.track_counter + 1) % 2 # 3
+            self.track_counter = (self.track_counter + 1) % 3
 
     def __setup_track_callbacks(self) -> None:
         @self.pc.on("track")
@@ -134,48 +196,6 @@ class ReceiverPeer(WebRTCClient):
     ) -> None:
         component.set_loop(self.loop)
         component.set_input_queue(queue)
-
-    # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
-    async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
-        # while not self.done.is_set():
-        logging.info("Synchronizing data...")
-        rgb_data: Dict[str, Any] = await self.rgb_queue.get()
-        depth_data: Dict[str, Any] = await self.depth_queue.get()
-        # semantic_data: Dict[str, Any] = await self.semantic_queue.get()
-        # state: Dict[str, Any] = await self.state_queue.get()
-
-        # if max_pts - min_pts <= 100:
-        print(rgb_data['pts'], depth_data['pts'], state['pts'])
-        step: Dict[str, Any] = {
-            'rgb': rgb_data['rgb'],
-            'depth': depth_data['depth'],
-            # 'semantic': semantic_data['semantic'],
-        }
-        step.update(state)
-        await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
-
-    async def send_action(self) -> None:
-        action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
-        print(f"Sending action {action} to provider...")
-        self.data_channel.send(json.dumps(action))
-
-    async def run(self) -> None: # asyncio.run(receiver.run())
-        while not self.disconnected.set():
-            await super().run()
-            self.__setup_track_callbacks()
-            self.__setup_datachannel_callbacks()
-            await receive_signaling(self.pc, self.signaling)
-
-            await self.done.wait()
-            await self.pc.close()
-            await empty_async_queue(self.rgb_queue)
-            await self.signaling.close()
-
-    async def clear_queues(self) -> None:
-        for queue_name in ASYNC_QUEUE_NAMES:
-            await empty_async_queue(getattr(self, f"{queue_name}_queue"))
-        for queue_name in QUEUE_NAMES:
-            empty_queue(getattr(self, f"{queue_name}_queue"))
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
