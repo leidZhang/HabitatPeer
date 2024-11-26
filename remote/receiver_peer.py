@@ -4,7 +4,7 @@ import logging
 import asyncio
 import fractions
 from queue import Queue
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple
 
 import cv2
 import numpy as np
@@ -62,7 +62,7 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         # print(f"PTS: {frame.pts} Depth image put into queue...")
 
         return GARBAGE_FRAME
-    
+
 
 class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self, track: VideoStreamTrack) -> None:
@@ -104,15 +104,13 @@ class ReceiverPeer(WebRTCClient):
         self.action_queue: Queue = None
 
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
-    async def syncronize_to_step(self, state: dict) -> None: # asyncio.create_task(receiver.process_data())
+    async def syncronize_to_step(self, state: dict) -> None:
         # while not self.done.is_set():
         logging.info("Synchronizing data...")
-        rgb_data: Dict[str, Any] = await self.rgb_queue.get()
-        depth_data: Dict[str, Any] = await self.depth_queue.get()
-        semantic_data: Dict[str, Any] = await self.semantic_queue.get()
-        # state: Dict[str, Any] = await self.state_queue.get()
+        rgb_data, depth_data, semantic_data = await self.__synchronize_images()
+        while min(rgb_data['pts'], depth_data['pts'], semantic_data['pts']) < state['pts']:
+            rgb_data, depth_data, semantic_data = await self.__synchronize_images()
 
-        # if max_pts - min_pts <= 100:
         print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
         step: Dict[str, Any] = {
             'rgb': rgb_data['rgb'],
@@ -144,6 +142,12 @@ class ReceiverPeer(WebRTCClient):
             await empty_async_queue(getattr(self, f"{queue_name}_queue"))
         for queue_name in QUEUE_NAMES:
             empty_queue(getattr(self, f"{queue_name}_queue"))
+
+    async def __synchronize_images(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        rgb_data: Dict[str, Any] = await self.rgb_queue.get()
+        depth_data: Dict[str, Any] = await self.depth_queue.get()
+        semantic_data: Dict[str, Any] = await self.semantic_queue.get()
+        return rgb_data, depth_data, semantic_data
 
     # TODO: May have to find some way to avoid hard coding the track order
     def __handle_stream_tracks(self, track: VideoStreamTrack) -> None:

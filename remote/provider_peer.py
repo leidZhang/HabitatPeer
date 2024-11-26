@@ -105,16 +105,16 @@ class DepthStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         # Create VideoFrame
         video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
         video_frame.pts, video_frame.time_base = pts, time_base
-        print(f"VideoFrame PTS: {video_frame.pts}")
+        # print(f"VideoFrame PTS: {video_frame.pts}")
 
         return video_frame
-    
+
 
 class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self) -> None:
         super().__init__()
         self.last_image: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
-        
+
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
 
@@ -122,7 +122,7 @@ class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         if self.input_queue.qsize() > 0:
             semantic: np.ndarray = await self.loop.run_in_executor(None, self.input_queue.get)
             image: np.ndarray = np.repeat(semantic, 3, axis=-1)
-            image[:, :, 2] = image[:, :, 2] % 10 
+            image[:, :, 2] = image[:, :, 2] % 10
             image[:, :, 1] = (image[:, :, 1] // 10) % 10
             image[:, :, 0] = image[:, :, 0] // 100
             image = (image * 255).astype(np.uint8)
@@ -135,7 +135,7 @@ class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         # Create VideoFrame
         video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
         video_frame.pts, video_frame.time_base = pts, time_base
-        print(f"VideoFrame PTS: {video_frame.pts}")
+        # print(f"VideoFrame PTS: {video_frame.pts}")
 
         return video_frame
 
