@@ -18,6 +18,7 @@ from .comm_utils import (
     decode_to_semantic,
     force_codec,
     push_to_buffer,
+    push_to_async_buffer,
     empty_async_queue,
     empty_queue
 )
@@ -35,12 +36,12 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
-        # print("Receiving RGB frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
-        # print("Decoding to rgb frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
-        await self.input_queue.put({'rgb': image, 'pts': frame.pts})
-        # print(f"PTS: {frame.pts} RGB image put into queue...")
+
+        if np.all(image == 0):
+            return GARBAGE_FRAME
+        await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
 
@@ -51,15 +52,13 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
-        # print("Receiving Depth frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
-        # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = decode_to_depth(image)
 
-        await self.input_queue.put({'depth': image, 'pts': frame.pts})
-        # print(f"PTS: {frame.pts} Depth image put into queue...")
+        if np.all(image == 0):
+            return GARBAGE_FRAME
+        await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
 
@@ -70,18 +69,16 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
-        # print("Receiving Semantic frame...")
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
-        # print("Decoding to rgba frame...")
         image: np.ndarray = frame.to_ndarray(format="rgb24")
-        # image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = decode_to_semantic(image)
 
-        await self.input_queue.put({'semantic': image, 'pts': frame.pts})
-        # print(f"PTS: {frame.pts} Semantic image put into queue...")
+        if np.all(image == 0):
+            return GARBAGE_FRAME
+        await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
-
+    
 
 class ReceiverPeer(WebRTCClient):
     def __init__(
@@ -105,11 +102,8 @@ class ReceiverPeer(WebRTCClient):
 
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None:
-        # while not self.done.is_set():
         logging.info("Synchronizing data...")
         rgb_data, depth_data, semantic_data = await self.__synchronize_images()
-        while min(rgb_data['pts'], depth_data['pts'], semantic_data['pts']) < state['pts']:
-            rgb_data, depth_data, semantic_data = await self.__synchronize_images()
 
         print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
         step: Dict[str, Any] = {
@@ -117,7 +111,7 @@ class ReceiverPeer(WebRTCClient):
             'depth': depth_data['depth'],
             'semantic': semantic_data['semantic'],
         }
-        step.update(state)
+        step.update(state) # Merge the state with the step data
         await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
 
     async def send_action(self) -> None:

@@ -20,10 +20,12 @@ def process_step_data(
     while not event.is_set():
         step_data: dict = step_queue.get()
         print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
-        action_queue.put({"action": random.randint(0, 7)})
         cv2.imshow("RGB received", step_data["rgb"])
         cv2.imshow("Depth received", step_data["depth"])
-        cv2.waitKey(30)
+        cv2.waitKey(30)        
+        time.sleep(10)
+        action_queue.put({"action": random.randint(0, 7)})
+
         print("===============")
 
     loop.stop()
