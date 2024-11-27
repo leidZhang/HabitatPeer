@@ -36,7 +36,7 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
 
         if np.all(image == 0):
@@ -52,7 +52,7 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_depth(image)
 
@@ -69,7 +69,7 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
-        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2.0)  # 2 seconds timeout
+        frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_semantic(image)
 
@@ -102,17 +102,24 @@ class ReceiverPeer(WebRTCClient):
 
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None:
-        logging.info("Synchronizing data...")
-        rgb_data, depth_data, semantic_data = await self.__synchronize_images()
-
-        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
-        step: Dict[str, Any] = {
-            'rgb': rgb_data['rgb'],
-            'depth': depth_data['depth'],
-            'semantic': semantic_data['semantic'],
-        }
-        step.update(state) # Merge the state with the step data
+        rgb_data, depth_data, semantic_data = await self.__synchronize_images()      
+          
+        if not state["reset"]:
+            logging.info("Synchronizing data...")
+            print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
+            step: Dict[str, Any] = {
+                'rgb': rgb_data['rgb'],
+                'depth': depth_data['depth'],
+                'semantic': semantic_data['semantic'],
+            }
+            print(state) # Print the state data for debugging
+            step.update(state) # Merge the state with the step data
+        else:
+            step = state # Reset signal received
+        
+        print("Attempting to push step data to the buffer...")
         await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
+        print("Step data pushed to the buffer")
 
     async def send_action(self) -> None:
         action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)

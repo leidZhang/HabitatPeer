@@ -8,6 +8,7 @@ from threading import Thread
 
 import cv2
 from remote import ReceiverPeer
+from remote.comm_utils import push_to_buffer
 
 
 # Note: Only for the integration test on the local machine
@@ -18,15 +19,19 @@ def process_step_data(
     loop: asyncio.AbstractEventLoop
 ) -> None:
     while not event.is_set():
+        print("===============")        
         step_data: dict = step_queue.get()
-        print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
-        cv2.imshow("RGB received", step_data["rgb"])
-        cv2.imshow("Depth received", step_data["depth"])
-        cv2.waitKey(30)        
-        time.sleep(10)
-        action_queue.put({"action": random.randint(0, 7)})
+        if step_data["reset"]:
+            print("Reset signal received, resetting...")
+            continue    
 
-        print("===============")
+        print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
+        # cv2.imshow("RGB received", step_data["rgb"])
+        # cv2.imshow("Depth received", step_data["depth"])
+        # cv2.waitKey(30)        
+        time.sleep(0.03)
+        print("Putting action to the buffer...")
+        action_queue.put({"action": random.randint(0, 5)}.copy())
 
     loop.stop()
     print("Test complete, waiting for finish...")

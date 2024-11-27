@@ -55,8 +55,11 @@ class StateSender(BaseAsyncComponent):
             None, self.input_queue.get
         )
         data["pts"] = pts
-        data["timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+        print(f"Sending state at {data['pts']}")
         self.data_channel.send(json.dumps(data))
+        
+    def set_event(self, event: asyncio.Event) -> None:
+        self.event = event
 
 
 class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
@@ -217,9 +220,9 @@ class ProviderPeer(WebRTCClient):
         @self.data_channel.on("message")
         def on_message(message: bytes) -> None:
             action: Dict[str, Any] = json.loads(message)
-            # print(f"Received action: {action}")
+            print(f"Received action: {action}")
             self.loop.run_in_executor(
-                None, push_to_buffer, self.action_queue, action
+                None, self.action_queue.put, action
             )
 
         @self.data_channel.on("close")

@@ -17,26 +17,33 @@ class HabitatActuator:
         self.depth_queue: Queue = None
         self.state_queue: Queue = None
         self.action_queue: Queue = None
+        self.first_reset: bool = True
 
     def __transmit_observation(self, observations: dict) -> None:
         for i, channel in enumerate(self.CHANNELS):
             getattr(self, f"{channel}_queue").put(observations[channel].copy())
-            # observations.pop(channel)
 
         # Convert the Observations object to a dictionary to avoid pickling issues
-        # TODO: Delete the semantic key check later
         state: dict = {key: observations[key].tolist() for key in observations.keys() if key not in self.CHANNELS}
+        state["reset"] = False # Tell the remote peer that it is not a reset state
+        print(f"Sending state: {state}")
         self.state_queue.put(state.copy())
 
     def __receive_action(self) -> Dict[str, Any]:
         return self.action_queue.get()
 
     def reset(self) -> None:
-        pass
+        state: dict = {"reset": True}
+        print(f"Sending state: {state}")
+        self.state_queue.put(state.copy())
 
     def act(self, observations: dict) -> Dict[str, Any]:
+        print("Sending observations to the server...")
         self.__transmit_observation(observations)
+        print("Waiting for the action...")
         action: Dict[str, Any] = self.__receive_action()
+        print(f"Got action: {action}")
+        print("====================================")
         return action
 
     def set_queue(self, queue_name: str, queue: Queue) -> None:
