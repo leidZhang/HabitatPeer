@@ -124,10 +124,11 @@ class ReceiverPeer(WebRTCClient):
 
     async def send_action(self) -> None:
         await self.action_event.wait() # Use asyncio.Event to avoid call stack overflow
-        action: Dict[str, Any] = self.action_queue.get_nowait()
-        # print(f"Sending action {action} to provider...")
-        self.data_channel.send(json.dumps(action))
-        self.action_event.clear()
+        if not self.action_queue.empty(): # Avoid Empty exception
+            action: Dict[str, Any] = self.action_queue.get_nowait()
+            print(f"Sending action {action} to provider...")
+            self.data_channel.send(json.dumps(action))        
+            self.action_event.clear()        
 
     async def run(self) -> None: # asyncio.run(receiver.run())
         while not self.disconnected.set():

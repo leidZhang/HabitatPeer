@@ -27,12 +27,13 @@ def process_step_data(
             continue
 
         print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
-        cv2.imshow("RGB received", step_data["rgb"])
-        cv2.imshow("Depth received", step_data["depth"])
-        cv2.waitKey(30)
-        # time.sleep(0.03)
-        print("Putting action to the buffer...")
-        action_queue.put({"action": random.randint(0, 5)}.copy())
+        # cv2.imshow("RGB received", step_data["rgb"])
+        # cv2.imshow("Depth received", step_data["depth"])
+        # cv2.waitKey(30)
+        time.sleep(10)
+        action: dict = {"action": random.randint(0, 5)}
+        print(f"Putting {action} to the buffer...")
+        action_queue.put(action.copy())
         complete_event.set()
 
     loop.stop()
