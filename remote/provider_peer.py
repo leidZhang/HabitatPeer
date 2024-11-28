@@ -65,7 +65,7 @@ class StateSender(BaseAsyncComponent):
 class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self) -> None:
         super().__init__()
-        self.last_frame: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.last_frame: np.ndarray = np.zeros((2, 2, 3), dtype=np.uint8)
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
@@ -89,7 +89,7 @@ class RGBStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 class DepthStreamTrack(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self) -> None:
         super().__init__()
-        self.last_image: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.last_image: np.ndarray = np.zeros((2, 2, 3), dtype=np.uint8)
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()
@@ -116,7 +116,7 @@ class DepthStreamTrack(VideoStreamTrack, BaseAsyncComponent):
 class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
     def __init__(self) -> None:
         super().__init__()
-        self.last_image: np.ndarray = np.zeros((480, 640, 3), dtype=np.uint8)
+        self.last_image: np.ndarray = np.zeros((2, 2, 3), dtype=np.uint8)
 
     async def recv(self) -> VideoFrame:
         pts, time_base = await self.next_timestamp()

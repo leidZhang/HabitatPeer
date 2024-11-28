@@ -8,6 +8,7 @@ from threading import Thread
 
 import cv2
 from remote import ReceiverPeer
+from remote.receiver_peer import DataSynchonizer
 from remote.comm_utils import push_to_buffer
 
 
@@ -19,11 +20,13 @@ def process_step_data(
     complete_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
+    last_step: int = None
+    
     while not event.is_set():
-        print("===============")
         step_data: dict = step_queue.get()
         if step_data["reset"]:
             print("Reset signal received, resetting...")
+            last_step = None
             continue
 
         print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
@@ -31,10 +34,12 @@ def process_step_data(
         # cv2.imshow("Depth received", step_data["depth"])
         # cv2.waitKey(30)
         # time.sleep(10)
-        action: dict = {"action": random.randint(0, 5)}
-        print(f"Putting {action} to the buffer...")
-        action_queue.put(action.copy())
-        complete_event.set()
+        if last_step != step_data["step"]:
+            last_step = step_data["step"]
+            action: dict = {"action": random.randint(0, 5)}
+            print(f"Putting {action} to the buffer...")
+            action_queue.put(action.copy())
+            complete_event.set()
 
     loop.stop()
     print("Test complete, waiting for finish...")
@@ -46,15 +51,23 @@ if __name__ == "__main__":
         config: dict = json.load(f)
 
     receiver: ReceiverPeer = ReceiverPeer(config['signaling_ip'], config['port'], config['stun_url'])
+    synchronizer: DataSynchonizer = DataSynchonizer()
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
     async_queue_names: list = ["rgb", "depth", "state", "semantic"]
     queue_names: list = ["action", "step"]
 
     receiver.set_loop(loop)
+    synchronizer.set_loop(loop)
+    synchronizer.done = receiver.done
     for name in async_queue_names:
-        receiver.set_queue(name, asyncio.Queue(config['max_size']))
+        queue = asyncio.Queue(config['max_size'])
+        receiver.set_queue(name, queue)
+        synchronizer.set_queue(name, queue)
     for name in queue_names:
-        receiver.set_queue(name, Queue(config['max_size']))
+        queue = Queue(config['max_size'])
+        receiver.set_queue(name, queue)
+        synchronizer.set_queue(name, queue)
+        
     decision_thread: Thread = Thread(
         target=process_step_data,
         args=(
@@ -68,6 +81,7 @@ if __name__ == "__main__":
 
     try:
         loop.create_task(receiver.run())
+        loop.create_task(synchronizer.syncronize_to_step())
         decision_thread.start()
         loop.run_forever()
     except KeyboardInterrupt:

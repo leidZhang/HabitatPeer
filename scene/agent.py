@@ -13,6 +13,7 @@ class HabitatActuator:
     CHANNELS: List[str] = ["rgb", "depth", "semantic"]
 
     def __init__(self) -> None:
+        self.step: int = 0
         self.rgb_queue: Queue = None
         self.depth_queue: Queue = None
         self.state_queue: Queue = None
@@ -25,7 +26,7 @@ class HabitatActuator:
 
         # Convert the Observations object to a dictionary to avoid pickling issues
         state: dict = {key: observations[key].tolist() for key in observations.keys() if key not in self.CHANNELS}
-        state["reset"] = False # Tell the remote peer that it is not a reset state
+        state["reset"], state["step"] = False, self.step # Tell the remote peer that it is not a reset state
         print(f"Sending state: {state}")
         self.state_queue.put(state.copy())
 
@@ -33,7 +34,8 @@ class HabitatActuator:
         return self.action_queue.get()
 
     def reset(self) -> None:
-        state: dict = {"reset": True}
+        self.step = 0 # Reset the step counter
+        state: dict = {"reset": True} # Reset signal
         print(f"Sending state: {state}")
         self.state_queue.put(state.copy())
 
@@ -44,6 +46,7 @@ class HabitatActuator:
         action: Dict[str, Any] = self.__receive_action()
         print(f"Got action: {action}")
         print("====================================")
+        self.step += 1
         return action
 
     def set_queue(self, queue_name: str, queue: Queue) -> None:
