@@ -16,22 +16,24 @@ def process_step_data(
     step_queue: Queue,
     action_queue: Queue,
     event: asyncio.Event,
+    complete_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
     while not event.is_set():
-        print("===============")        
+        print("===============")
         step_data: dict = step_queue.get()
         if step_data["reset"]:
             print("Reset signal received, resetting...")
-            continue    
+            continue
 
         print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
-        # cv2.imshow("RGB received", step_data["rgb"])
-        # cv2.imshow("Depth received", step_data["depth"])
-        # cv2.waitKey(30)        
-        time.sleep(0.03)
+        cv2.imshow("RGB received", step_data["rgb"])
+        cv2.imshow("Depth received", step_data["depth"])
+        cv2.waitKey(30)
+        # time.sleep(0.03)
         print("Putting action to the buffer...")
         action_queue.put({"action": random.randint(0, 5)}.copy())
+        complete_event.set()
 
     loop.stop()
     print("Test complete, waiting for finish...")
@@ -58,6 +60,7 @@ if __name__ == "__main__":
             receiver.step_queue,
             receiver.action_queue,
             receiver.done,
+            receiver.action_event,
             loop
         )
     )

@@ -78,7 +78,7 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
-    
+
 
 class ReceiverPeer(WebRTCClient):
     def __init__(
@@ -90,6 +90,7 @@ class ReceiverPeer(WebRTCClient):
         super().__init__(signaling_ip, signaling_port, stun_urls=stun_urls)
         self.data_channel: RTCDataChannel = None
         self.track_counter: int = 0
+        self.action_event: asyncio.Event = asyncio.Event()
 
         self.loop: asyncio.AbstractEventLoop = None
         # Queues for each stream/track
@@ -102,8 +103,8 @@ class ReceiverPeer(WebRTCClient):
 
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self, state: dict) -> None:
-        rgb_data, depth_data, semantic_data = await self.__synchronize_images()      
-          
+        rgb_data, depth_data, semantic_data = await self.__synchronize_images()
+
         if not state["reset"]:
             logging.info("Synchronizing data...")
             print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
@@ -116,15 +117,17 @@ class ReceiverPeer(WebRTCClient):
             step.update(state) # Merge the state with the step data
         else:
             step = state # Reset signal received
-        
+
         print("Attempting to push step data to the buffer...")
         await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step)
         print("Step data pushed to the buffer")
 
     async def send_action(self) -> None:
-        action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
-        print(f"Sending action {action} to provider...")
+        await self.action_event.wait() # Use asyncio.Event to avoid call stack overflow
+        action: Dict[str, Any] = self.action_queue.get_nowait()
+        # print(f"Sending action {action} to provider...")
         self.data_channel.send(json.dumps(action))
+        self.action_event.clear()
 
     async def run(self) -> None: # asyncio.run(receiver.run())
         while not self.disconnected.set():
