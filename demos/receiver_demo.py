@@ -30,7 +30,7 @@ def process_step_data(
         # cv2.imshow("RGB received", step_data["rgb"])
         # cv2.imshow("Depth received", step_data["depth"])
         # cv2.waitKey(30)
-        time.sleep(10)
+        # time.sleep(10)
         action: dict = {"action": random.randint(0, 5)}
         print(f"Putting {action} to the buffer...")
         action_queue.put(action.copy())

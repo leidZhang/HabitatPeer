@@ -41,7 +41,8 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
 
         if np.all(image == 0):
             return GARBAGE_FRAME
-        await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
+        await self.input_queue.put({'rgb': image, 'pts': frame.pts})
+        # await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
 
@@ -58,7 +59,8 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
 
         if np.all(image == 0):
             return GARBAGE_FRAME
-        await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
+        await self.input_queue.put({'depth': image, 'pts': frame.pts})
+        # await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
 
@@ -75,7 +77,8 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
 
         if np.all(image == 0):
             return GARBAGE_FRAME
-        await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
+        await self.input_queue.put({'semantic': image, 'pts': frame.pts})
+        # await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
 
