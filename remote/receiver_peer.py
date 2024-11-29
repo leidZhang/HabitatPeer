@@ -36,6 +36,7 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
+        await self.next_timestamp()
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
 
@@ -53,6 +54,7 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
+        await self.next_timestamp()
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_depth(image)
@@ -71,6 +73,7 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         self.track: VideoStreamTrack = track
 
     async def recv(self) -> VideoFrame:
+        await self.next_timestamp()
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=5.0)  # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_semantic(image)
@@ -81,8 +84,8 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         # await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
 
         return GARBAGE_FRAME
-    
-    
+
+
 class DataSynchonizer:
     def __init__(self) -> None:
         self.rgb_queue: asyncio.Queue = None
@@ -92,17 +95,20 @@ class DataSynchonizer:
         self.step_queue: Queue = None
         self.loop: asyncio.AbstractEventLoop = None
         self.done: asyncio.Event = None
-        
+
     async def __synchronize_images(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
         rgb_data: Dict[str, Any] = await self.rgb_queue.get()
         depth_data: Dict[str, Any] = await self.depth_queue.get()
         semantic_data: Dict[str, Any] = await self.semantic_queue.get()
         return rgb_data, depth_data, semantic_data
-    
+
     # TODO: Use the correct synchronization method rather simply waitting for the state to be updated
     async def syncronize_to_step(self) -> None:
         while not self.done.is_set():
             rgb_data, depth_data, semantic_data = await self.__synchronize_images()
+            if self.state_queue.empty():
+                continue
+
             state: Dict[str, Any] = await self.state_queue.get()
             if not state["reset"]:
                 logging.info("Synchronizing data...")
@@ -120,7 +126,7 @@ class DataSynchonizer:
             print("Attempting to push step data to the buffer...")
             await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step_data)
             print("Step data pushed to the buffer")
-            
+
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self.loop = loop
 
@@ -154,9 +160,9 @@ class ReceiverPeer(WebRTCClient):
         if not self.action_queue.empty(): # Avoid Empty exception
             action: Dict[str, Any] = self.action_queue.get_nowait()
             print(f"Sending action {action} to provider...")
-            self.data_channel.send(json.dumps(action)) 
-            print("====================================")       
-            self.action_event.clear()        
+            self.data_channel.send(json.dumps(action))
+            print("====================================")
+            self.action_event.clear()
 
     async def run(self) -> None: # asyncio.run(receiver.run())
         while not self.disconnected.set():

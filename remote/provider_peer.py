@@ -57,7 +57,7 @@ class StateSender(BaseAsyncComponent):
         data["pts"] = pts
         print(f"Sending state at {data['pts']}")
         self.data_channel.send(json.dumps(data))
-        
+
     def set_event(self, event: asyncio.Event) -> None:
         self.event = event
 
@@ -194,17 +194,17 @@ class ProviderPeer(WebRTCClient):
         rgb_track: VideoStreamTrack = RGBStreamTrack()
         self.__set_async_components(rgb_track, self.rgb_queue)
         rgb_sender: RTCRtpSender = self.pc.addTrack(rgb_track)
-        force_codec(self.pc, rgb_sender)
+        # force_codec(self.pc, rgb_sender)
 
         depth_track: VideoStreamTrack = DepthStreamTrack()
         self.__set_async_components(depth_track, self.depth_queue)
         depth_sender: RTCRtpSender = self.pc.addTrack(depth_track)
-        force_codec(self.pc, depth_sender)
+        # force_codec(self.pc, depth_sender)
 
         semantic_track: VideoStreamTrack = SemanticStreamTrack()
         self.__set_async_components(semantic_track, self.semantic_queue)
         semantic_sender: RTCRtpSender = self.pc.addTrack(semantic_track)
-        force_codec(self.pc, semantic_sender)
+        # force_codec(self.pc, semantic_sender)
 
     def __setup_datachannel_callbacks(self) -> None:
         self.data_channel = self.pc.createDataChannel("datachannel")

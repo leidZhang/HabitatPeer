@@ -21,7 +21,7 @@ def process_step_data(
     loop: asyncio.AbstractEventLoop
 ) -> None:
     last_step: int = None
-    
+
     while not event.is_set():
         step_data: dict = step_queue.get()
         if step_data["reset"]:
@@ -30,10 +30,10 @@ def process_step_data(
             continue
 
         print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}")
-        # cv2.imshow("RGB received", step_data["rgb"])
-        # cv2.imshow("Depth received", step_data["depth"])
-        # cv2.waitKey(30)
-        # time.sleep(10)
+        cv2.imshow("RGB received", step_data["rgb"])
+        cv2.imshow("Depth received", step_data["depth"])
+        cv2.waitKey(30)
+        time.sleep(10)
         if last_step != step_data["step"]:
             last_step = step_data["step"]
             action: dict = {"action": random.randint(0, 5)}
@@ -67,7 +67,7 @@ if __name__ == "__main__":
         queue = Queue(config['max_size'])
         receiver.set_queue(name, queue)
         synchronizer.set_queue(name, queue)
-        
+
     decision_thread: Thread = Thread(
         target=process_step_data,
         args=(
