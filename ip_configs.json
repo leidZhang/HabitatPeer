@@ -3,7 +3,7 @@
     "server_ip": "localhost",
     "port": 8765,
     "stun_url": ["stun:stun.l.google.com:19302"],
-    "max_size": 1,
+    "max_size": 5,
     "width": 640,
     "height": 480
 }
