@@ -136,7 +136,7 @@ class DepthStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         # Create VideoFrame
         video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
         video_frame.pts, video_frame.time_base = pts, time_base
-        # print(f"VideoFrame PTS: {video_frame.pts}")
+        print(f"VideoFrame PTS: {video_frame.pts}")
 
         return video_frame
 
@@ -177,7 +177,7 @@ class SemanticStreamTrack(VideoStreamTrack, BaseAsyncComponent):
         # Create VideoFrame
         video_frame: VideoFrame = VideoFrame.from_ndarray(image, format="bgr24")
         video_frame.pts, video_frame.time_base = pts, time_base
-        # print(f"VideoFrame PTS: {video_frame.pts}")
+        print(f"VideoFrame PTS: {video_frame.pts}")
 
         return video_frame
 

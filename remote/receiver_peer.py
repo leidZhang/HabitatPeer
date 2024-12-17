@@ -16,12 +16,20 @@ from aiortc import RTCDataChannel, VideoStreamTrack, RTCRtpSender
 from .signaling_utils import WebRTCClient, receive_signaling
 from .comm_utils import (
     BaseAsyncComponent,
+    push_to_buffer,
     decode_to_depth,
     decode_to_semantic,
     empty_async_queue,
     empty_queue
 )
 
+GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((2, 2, 3), dtype=np.uint8), format="rgb24")
+GARBAGE_FRAME.pts = 0
+GARBAGE_FRAME.time_base = fractions.Fraction(1, 90000)
+# Copied from aiortc source code
+VIDEO_PTIME = 1 / 10
+VIDEO_CLOCK_RATE = 90000
+VIDEO_TIME_BASE = fractions.Fraction(1, VIDEO_CLOCK_RATE)
 ASYNC_QUEUE_NAMES: List[str] = [] # ['rgb', 'depth','semantic','state']
 QUEUE_NAMES: List[str] = ['action', 'step'] + ['rgb', 'depth','semantic','state']
 
@@ -31,15 +39,26 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         super().__init__()
         self.track: VideoStreamTrack = track
 
+    async def next_timestamp(self) -> Tuple[int, fractions.Fraction]:
+        if hasattr(self, "_timestamp"):
+            self._timestamp += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
+            wait = self._start + (self._timestamp / VIDEO_CLOCK_RATE) - time.time()
+            await asyncio.sleep(wait)
+        else:
+            self._start = time.time()
+            self._timestamp = 0
+        return self._timestamp, VIDEO_TIME_BASE
+
     async def recv(self) -> VideoFrame:
-        # await self.next_timestamp()
+        await self.next_timestamp()
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2)   # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
 
         # await self.input_queue.put({'rgb': image, 'pts': frame.pts})
         await self.loop.run_in_executor(None, self.input_queue.put, {'rgb': image, 'pts': frame.pts})
         # await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
-        # print(f"Received RGB frame at {frame.pts}")
+        print(f"Received RGB frame at {frame.pts}")
+        return GARBAGE_FRAME
 
 
 class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -47,8 +66,18 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         super().__init__()
         self.track: VideoStreamTrack = track
 
+    async def next_timestamp(self) -> Tuple[int, fractions.Fraction]:
+        if hasattr(self, "_timestamp"):
+            self._timestamp += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
+            wait = self._start + (self._timestamp / VIDEO_CLOCK_RATE) - time.time()
+            await asyncio.sleep(wait)
+        else:
+            self._start = time.time()
+            self._timestamp = 0
+        return self._timestamp, VIDEO_TIME_BASE
+
     async def recv(self) -> VideoFrame:
-        # await self.next_timestamp()
+        await self.next_timestamp()
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2) # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_depth(image)
@@ -56,7 +85,8 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         # await self.input_queue.put({'depth': image, 'pts': frame.pts})
         await self.loop.run_in_executor(None, self.input_queue.put, {'depth': image, 'pts': frame.pts})
         # await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
-        # print(f"Received Depth frame at {frame.pts}")
+        print(f"Received Depth frame at {frame.pts}")
+        return GARBAGE_FRAME
 
 
 class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -64,20 +94,32 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         super().__init__()
         self.track: VideoStreamTrack = track
 
+    async def next_timestamp(self) -> Tuple[int, fractions.Fraction]:
+        if hasattr(self, "_timestamp"):
+            self._timestamp += int(VIDEO_PTIME * VIDEO_CLOCK_RATE)
+            wait = self._start + (self._timestamp / VIDEO_CLOCK_RATE) - time.time()
+            await asyncio.sleep(wait)
+        else:
+            self._start = time.time()
+            self._timestamp = 0
+        return self._timestamp, VIDEO_TIME_BASE
+
     async def recv(self) -> VideoFrame:
-        # await self.next_timestamp()
+        await self.next_timestamp()
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2) # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_semantic(image)
 
         # await self.input_queue.put({'semantic': image, 'pts': frame.pts})
-        self.loop.run_in_executor(None, self.input_queue.put, {'semantic': image, 'pts': frame.pts})
+        await self.loop.run_in_executor(None, self.input_queue.put, {'semantic': image, 'pts': frame.pts})
         # await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
-        # print(f"Received Semantic frame at {frame.pts}")
+        print(f"Received Semantic frame at {frame.pts}")
+        return GARBAGE_FRAME
 
 
 class DataSynchronizer:
-    def __init__(self, done: asyncio.Event) -> None:
+    def __init__(self, done: asyncio.Event, action_event: asyncio.Event) -> None:
+        self.action_event: asyncio.Event = action_event
         self.last_step: int = None
         self.done: asyncio.Event = done
         self.loop: asyncio.AbstractEventLoop = None
@@ -93,13 +135,40 @@ class DataSynchronizer:
         while not self.done.is_set():
             self.__synchronize_to_step()
 
+    def __put_to_step_queue(self, step_data: Dict[str, Any]) -> None:
+        # push_to_buffer(self.step_queue, step_data)
+        if not self.step_queue.full():
+            self.step_queue.put(step_data.copy())
+
+    def __get_latest_data(self, queue: Queue, target_pts: int) -> Dict[str, Any]:
+        while True:
+            data = queue.get()
+            if data['pts'] >= target_pts:
+                return data
+
     def __synchronize_to_step(self) -> None:
+        state: Dict[str, Any] = self.state_queue.get()
         rgb_data: Dict[str, Any] = self.rgb_queue.get()
         depth_data: Dict[str, Any] = self.depth_queue.get()
         semantic_data: Dict[str, Any] = self.semantic_queue.get()
-        state: Dict[str, Any] = self.state_queue.get()
 
-        if not state["reset"] and self.__is_same_step(rgb_data, depth_data, semantic_data, state):
+        print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
+
+        if state["reset"]:
+            push_to_buffer(self.step_queue, state.copy())
+            return
+
+        max_pts = max(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
+        if rgb_data['pts'] < max_pts:
+            rgb_data = self.__get_latest_data(self.rgb_queue, max_pts)
+        if depth_data['pts'] < max_pts:
+            depth_data = self.__get_latest_data(self.depth_queue, max_pts)
+        if semantic_data['pts'] < max_pts:
+            semantic_data = self.__get_latest_data(self.semantic_queue, max_pts)
+        if state['pts'] < max_pts:
+            state = self.__get_latest_data(self.state_queue, max_pts)
+
+        if self.__is_same_step(rgb_data, depth_data, semantic_data, state):
             # print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
             step_data: Dict[str, Any] = {
                 'rgb': rgb_data['rgb'],
@@ -108,14 +177,7 @@ class DataSynchronizer:
             }
             # print(state) # Print the state data for debugging
             step_data.update(state) # Merge the state with the step data
-        else:
-            step_data = state # Reset signal received
-
-        # print("Attempting to push step data to the buffer...")
-        if step_data['step'] != self.last_step:
-            self.last_step = step_data['step']
-            print("Pushing step data to the buffer...")
-            self.step_queue.put(step_data.copy())
+            self.__put_to_step_queue(step_data)
 
     # async def run(self) -> None:
     #     while not self.done.is_set():
@@ -226,20 +288,20 @@ class ReceiverPeer(WebRTCClient):
 
     # TODO: May have to find some way to avoid hard coding the track order
     async def __handle_stream_tracks(self, track: VideoStreamTrack) -> None:
-            if self.track_counter == 0:
-                local_track: VideoStreamTrack = RGBProcessor(track)
-                target_queue: asyncio.Queue = self.rgb_queue
-            elif self.track_counter == 1:
-                local_track: VideoStreamTrack = DepthProcessor(track)
-                target_queue: asyncio.Queue = self.depth_queue
-            elif self.track_counter == 2:
-                local_track: VideoStreamTrack = SemanticProcessor(track)
-                target_queue: asyncio.Queue = self.semantic_queue
-            self.__set_async_components(local_track, target_queue)
-            self.media_processor.addTrack(local_track)
-            await self.media_processor.start()
+        if self.track_counter == 0:
+            local_track: VideoStreamTrack = RGBProcessor(track)
+            target_queue: asyncio.Queue = self.rgb_queue
+        elif self.track_counter == 1:
+            local_track: VideoStreamTrack = DepthProcessor(track)
+            target_queue: asyncio.Queue = self.depth_queue
+        elif self.track_counter == 2:
+            local_track: VideoStreamTrack = SemanticProcessor(track)
+            target_queue: asyncio.Queue = self.semantic_queue
+        self.__set_async_components(local_track, target_queue)
+        self.media_processor.addTrack(local_track)
+        await self.media_processor.start()
 
-            self.track_counter = (self.track_counter + 1) % 3
+        self.track_counter = (self.track_counter + 1) % 3
 
     def __setup_track_callbacks(self) -> None:
         self.media_processor = MediaBlackhole()
@@ -263,7 +325,7 @@ class ReceiverPeer(WebRTCClient):
                 # print(f"Received message: {message} for provider...")
                 state: Dict[str, Any] = json.loads(message)
                 # await self.state_queue.put(state)
-                self.loop.run_in_executor(None, self.state_queue.put, state)
+                await self.loop.run_in_executor(None, self.state_queue.put, state)
                 # await push_to_async_buffer(self.state_queue, state)
 
             @self.data_channel.on("close")
