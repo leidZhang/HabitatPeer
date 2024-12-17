@@ -21,25 +21,36 @@ def process_step_data(
     complete_event: asyncio.Event,
     loop: asyncio.AbstractEventLoop
 ) -> None:
+    last_step = None
+
     while not event.is_set():
         step_data: dict = step_queue.get()
+
         if step_data["reset"]:
+            last_step = step_data['step']
             print("Reset signal received, resetting...")
+            complete_event.set()
             continue
 
-        print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}, current step: {step_data['step']}")
-        cv2.imwrite(f"docs/rgb.png", step_data["rgb"])
-        depth_map_uint8 = (step_data["depth"] * 255).astype(np.uint8)
-        cv2.imwrite(f"docs/depth.png", depth_map_uint8)
-        # cv2.imshow("RGB received", step_data["rgb"])
-        # cv2.imshow("Depth received", step_data["depth"])
-        # cv2.waitKey(30)
+        if 'depth' not in step_data.keys() or 'rgb' not in step_data.keys() or 'semantic' not in step_data.keys():
+            continue
 
-        # time.sleep(1)
+        if last_step != step_data['step']:
+            last_step = step_data['step']
+            print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}, current step: {step_data['step']}")
+            # cv2.imwrite(f"docs/rgb.png", step_data["rgb"])
+            # depth_map_uint8 = (step_data["depth"] * 255).astype(np.uint8)
+            # cv2.imwrite(f"docs/depth.png", depth_map_uint8)
+            # cv2.imshow("RGB received", step_data["rgb"])
+            # cv2.imshow("Depth received", step_data["depth"])
+            # cv2.waitKey(30)
 
-        action: dict = {"action": random.randint(0, 5)}
-        print(f"Putting {action} to the buffer...")
-        action_queue.put(action.copy())
+            time.sleep(3) # Simulate processing time
+
+            action: dict = {"action": random.randint(0, 5)}
+            action_queue.put(action.copy())
+            print(f"Putting {action} to the buffer...")
+            complete_event.set()
 
     loop.stop()
     print("Test complete, waiting for finish...")
@@ -51,7 +62,7 @@ if __name__ == "__main__":
         config: dict = json.load(f)
 
     receiver: ReceiverPeer = ReceiverPeer(config['signaling_ip'], config['port'], config['stun_url'])
-    synchronizer: DataSynchronizer = DataSynchronizer(receiver.done)
+    synchronizer: DataSynchronizer = DataSynchronizer(receiver.done, receiver.action_event)
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
     async_queue_names: list = [] # ["rgb", "depth", "state", "semantic"]
     queue_names: list = ["action", "step"] + ["rgb", "depth", "state", "semantic"]
