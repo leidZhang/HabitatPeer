@@ -9,7 +9,7 @@ from threading import Thread
 import cv2
 import numpy as np
 from remote import ReceiverPeer
-from remote.receiver_peer import DataSynchronizer
+from remote.receiver_peer import AsyncSynchronizer
 from remote.comm_utils import push_to_buffer
 
 
@@ -32,20 +32,17 @@ def process_step_data(
             complete_event.set()
             continue
 
-        if 'depth' not in step_data.keys() or 'rgb' not in step_data.keys() or 'semantic' not in step_data.keys():
-            continue
-
         if last_step != step_data['step']:
             last_step = step_data['step']
-            print(f"Color: {step_data['depth'][0][0]}, PTS: {step_data['pts']}, current step: {step_data['step']}")
             # cv2.imwrite(f"docs/rgb.png", step_data["rgb"])
             # depth_map_uint8 = (step_data["depth"] * 255).astype(np.uint8)
             # cv2.imwrite(f"docs/depth.png", depth_map_uint8)
-            # cv2.imshow("RGB received", step_data["rgb"])
-            # cv2.imshow("Depth received", step_data["depth"])
-            # cv2.waitKey(30)
+            step_data['rgb'] = cv2.cvtColor(step_data['rgb'], cv2.COLOR_RGB2BGR)
+            cv2.imshow("RGB received", step_data["rgb"])
+            cv2.imshow("Depth received", step_data["depth"])
+            cv2.waitKey(30)
 
-            time.sleep(3) # Simulate processing time
+            # time.sleep(3) # Simulate processing time
 
             action: dict = {"action": random.randint(0, 5)}
             action_queue.put(action.copy())
@@ -62,10 +59,10 @@ if __name__ == "__main__":
         config: dict = json.load(f)
 
     receiver: ReceiverPeer = ReceiverPeer(config['signaling_ip'], config['port'], config['stun_url'])
-    synchronizer: DataSynchronizer = DataSynchronizer(receiver.done, receiver.action_event)
+    synchronizer: AsyncSynchronizer = AsyncSynchronizer(receiver.done, receiver.action_event)
     loop: asyncio.AbstractEventLoop = asyncio.get_event_loop()
-    async_queue_names: list = [] # ["rgb", "depth", "state", "semantic"]
-    queue_names: list = ["action", "step"] + ["rgb", "depth", "state", "semantic"]
+    async_queue_names: list = ["rgb", "depth", "state", "semantic"]
+    queue_names: list = ["action", "step"] # + ["rgb", "depth", "state", "semantic"]
 
     receiver.set_loop(loop)
     synchronizer.set_loop(loop)
@@ -89,14 +86,14 @@ if __name__ == "__main__":
         )
     )
 
-    synchronizer_thread: Thread = Thread(
-        target=synchronizer.run
-    )
+    # synchronizer_thread: Thread = Thread(
+    #     target=synchronizer.run
+    # )
 
     try:
         loop.create_task(receiver.run())
         # loop.create_task(synchronizer.run())
-        synchronizer_thread.start()
+        # synchronizer_thread.start()
         decision_thread.start()
         loop.run_forever()
     except KeyboardInterrupt:
