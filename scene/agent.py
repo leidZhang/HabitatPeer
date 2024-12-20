@@ -1,6 +1,8 @@
-import time
+import io
 from typing import List, Dict, Any
 from queue import Queue
+
+import numpy as np
 
 
 class HabitatActuator:
@@ -20,19 +22,6 @@ class HabitatActuator:
         self.action_queue: Queue = None
         self.first_reset: bool = True
 
-    def __transmit_observation(self, observations: dict) -> None:
-        for i, channel in enumerate(self.CHANNELS):
-            getattr(self, f"{channel}_queue").put(observations[channel].copy())
-
-        # Convert the Observations object to a dictionary to avoid pickling issues
-        state: dict = {key: observations[key].tolist() for key in observations.keys() if key not in self.CHANNELS}
-        state["reset"], state["step"] = False, self.step # Tell the remote peer that it is not a reset state
-        # print(f"Sending state: {state}")
-        self.state_queue.put(state.copy())
-
-    def __receive_action(self) -> Dict[str, Any]:
-        return self.action_queue.get()
-
     def reset(self) -> None:
         self.step = 0 # Reset the step counter
         state: dict = {"reset": True, 'step': -1} # Reset signal
@@ -41,14 +30,27 @@ class HabitatActuator:
 
     def act(self, observations: dict) -> Dict[str, Any]:
         print("Sending observations to the server...")
-        while self.action_queue.empty():
-            self.__transmit_observation(observations)
+        self.__transmit_observation(observations)
 
         action: Dict[str, Any] = self.__receive_action()
         print(f"Got action: {action}")
         print("====================================")
         self.step += 1
         return action
+
+    def __transmit_observation(self, observations: dict) -> None:
+        # Convert the Observations object to a dictionary to avoid pickling issues
+        state: dict = {key: observations[key].tolist() for key in observations.keys() if key not in self.CHANNELS}
+        state["reset"], state["step"] = False, self.step # Tell the remote peer that it is not a reset state
+        for i, channel in enumerate(self.CHANNELS):
+            state[channel] = observations[channel].copy()
+            # getattr(self, f"{channel}_queue").put(observations[channel].copy())
+
+        # print(f"Sending state: {state}")
+        self.state_queue.put(state.copy())
+
+    def __receive_action(self) -> Dict[str, Any]:
+        return self.action_queue.get()
 
     def set_queue(self, queue_name: str, queue: Queue) -> None:
         setattr(self, f"{queue_name}_queue", queue)

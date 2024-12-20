@@ -14,14 +14,7 @@ from aiortc.contrib.media import MediaBlackhole
 from aiortc import RTCDataChannel, VideoStreamTrack, RTCRtpSender
 
 from .signaling_utils import WebRTCClient, receive_signaling
-from .comm_utils import (
-    BaseAsyncComponent,
-    push_to_buffer,
-    decode_to_depth,
-    decode_to_semantic,
-    empty_async_queue,
-    empty_queue
-)
+from .comm_utils import *
 
 GARBAGE_FRAME: VideoFrame = VideoFrame.from_ndarray(np.zeros((2, 2, 3), dtype=np.uint8), format="rgb24")
 GARBAGE_FRAME.pts = 0
@@ -54,8 +47,8 @@ class RGBProcessor(VideoStreamTrack, BaseAsyncComponent):
         frame: VideoFrame = await asyncio.wait_for(self.track.recv(), timeout=2)   # 2 seconds timeout
         image: np.ndarray = frame.to_ndarray(format="rgb24")
 
-        # await self.input_queue.put({'rgb': image, 'pts': frame.pts})
-        await self.loop.run_in_executor(None, self.input_queue.put, {'rgb': image, 'pts': frame.pts})
+        await self.input_queue.put({'rgb': image, 'pts': frame.pts})
+        # await self.loop.run_in_executor(None, self.input_queue.put, {'rgb': image, 'pts': frame.pts})
         # await push_to_async_buffer(self.input_queue, {'rgb': image, 'pts': frame.pts})
         print(f"Received RGB frame at {frame.pts}")
         return GARBAGE_FRAME
@@ -82,11 +75,9 @@ class DepthProcessor(VideoStreamTrack, BaseAsyncComponent):
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_depth(image)
 
-        # await self.input_queue.put({'depth': image, 'pts': frame.pts})
-        await self.loop.run_in_executor(None, self.input_queue.put, {'depth': image, 'pts': frame.pts})
+        await self.input_queue.put({'depth': image, 'pts': frame.pts})
+        # await self.loop.run_in_executor(None, self.input_queue.put, {'depth': image, 'pts': frame.pts})
         # await push_to_async_buffer(self.input_queue, {'depth': image, 'pts': frame.pts})
-        print(f"Received Depth frame at {frame.pts}")
-        return GARBAGE_FRAME
 
 
 class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
@@ -110,11 +101,9 @@ class SemanticProcessor(VideoStreamTrack, BaseAsyncComponent):
         image: np.ndarray = frame.to_ndarray(format="rgb24")
         image = decode_to_semantic(image)
 
-        # await self.input_queue.put({'semantic': image, 'pts': frame.pts})
-        await self.loop.run_in_executor(None, self.input_queue.put, {'semantic': image, 'pts': frame.pts})
+        await self.input_queue.put({'semantic': image, 'pts': frame.pts})
+        # await self.loop.run_in_executor(None, self.input_queue.put, {'semantic': image, 'pts': frame.pts})
         # await push_to_async_buffer(self.input_queue, {'semantic': image, 'pts': frame.pts})
-        print(f"Received Semantic frame at {frame.pts}")
-        return GARBAGE_FRAME
 
 
 class DataSynchronizer:
@@ -179,42 +168,81 @@ class DataSynchronizer:
             step_data.update(state) # Merge the state with the step data
             self.__put_to_step_queue(step_data)
 
-    # async def run(self) -> None:
-    #     while not self.done.is_set():
-    #         await self.__synchronize_to_step()
+    def __is_same_step(
+        self,
+        rgb_data: Dict[str, Any],
+        depth_data: Dict[str, Any],
+        semantic_data: Dict[str, Any],
+        state: Dict[str, Any]
+    ) -> bool:
+        return (
+            rgb_data['pts'] == depth_data['pts'] == semantic_data['pts'] == state['pts']
+        )
 
-    # async def __synchronize_images(self) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
-    #     rgb_data: Dict[str, Any] = await self.rgb_queue.get()
-    #     depth_data: Dict[str, Any] = await self.depth_queue.get()
-    #     semantic_data: Dict[str, Any] = await self.semantic_queue.get()
+    def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        self.loop = loop
 
-    #     return rgb_data, depth_data, semantic_data
+    def set_queue(self, queue_name: str, queue: Queue) -> None:
+        setattr(self, f"{queue_name}_queue", queue)
 
-    # async def __synchronize_to_step(self) -> None:
-    #     state: Dict[str, Any] = await self.state_queue.get()
-    #     rgb_data, depth_data, semantic_data = await self.__synchronize_images()
 
-    #     if not state["reset"] and self.__is_same_step(rgb_data, depth_data, semantic_data, state):
-    #         # logging.info("Synchronizing data...")
-    #         # print(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
-    #         step_data: Dict[str, Any] = {
-    #             'rgb': rgb_data['rgb'],
-    #             'depth': depth_data['depth'],
-    #             'semantic': semantic_data['semantic'],
-    #         }
-    #         # print(state) # Print the state data for debugging
-    #         step_data.update(state) # Merge the state with the step data
-    #     else:
-    #         step_data = state # Reset signal received
+class AsyncSynchronizer(BaseAsyncComponent):
+    def __init__(self, done: asyncio.Event, action_event: asyncio.Event) -> None:
+        self.action_event: asyncio.Event = action_event
+        self.last_step: int = None
+        self.done: asyncio.Event = done
+        self.loop: asyncio.AbstractEventLoop = None
+        # Queues for each stream/track
+        self.depth_queue: asyncio.Queue = None
+        self.rgb_queue: asyncio.Queue = None
+        self.semantic_queue: asyncio.Queue = None
+        self.state_queue: asyncio.Queue = None
+        self.step_queue: Queue = None
+        self.action_queue: Queue = None
 
-    #     # print("Attempting to push step data to the buffer...")
-    #     if step_data['step'] != self.last_step:
-    #         self.last_step = step_data['step']
-    #         print("Pushing step data to the buffer...")
-    #         # self.step_queue.put_nowait(step_data)
-    #         await self.loop.run_in_executor(None, self.step_queue.put, step_data.copy())
-    #         # await self.loop.run_in_executor(None, push_to_buffer, self.step_queue, step_data)
-    #     # print("Step data pushed to the buffer")
+    async def run(self) -> None:
+        while not self.done.is_set():
+            await self.__synchronize_to_step()
+
+    async def __get_latest_data(self, queue: asyncio.Queue, target_pts: int) -> Dict[str, Any]:
+        while True:
+            data = await queue.get()
+            if data['pts'] >= target_pts:
+                return data
+
+    async def __synchronize_to_step(self) -> None:
+        state: Dict[str, Any] = await self.state_queue.get()
+        if state["reset"]:
+            self.last_step = step_data['step']
+            await self.loop.run_in_executor(None, self.step_queue.put, state.copy())
+            return
+
+        rgb_data: Dict[str, Any] = await self.rgb_queue.get()
+        depth_data: Dict[str, Any] = await self.depth_queue.get()
+        semantic_data: Dict[str, Any] = await self.semantic_queue.get()
+
+        max_pts = max(rgb_data['pts'], depth_data['pts'], semantic_data['pts'], state['pts'])
+        if rgb_data['pts'] < max_pts:
+            rgb_data = await self.__get_latest_data(self.rgb_queue, max_pts)
+        if depth_data['pts'] < max_pts:
+            depth_data = await self.__get_latest_data(self.depth_queue, max_pts)
+        if semantic_data['pts'] < max_pts:
+            semantic_data = await self.__get_latest_data(self.semantic_queue, max_pts)
+        if state['pts'] < max_pts:
+            state = await self.__get_latest_data(self.state_queue, max_pts)
+
+        if self.__is_same_step(rgb_data, depth_data, semantic_data, state):
+            step_data: Dict[str, Any] = {
+                'rgb': rgb_data['rgb'],
+                'depth': depth_data['depth'],
+                'semantic': semantic_data['semantic'],
+            }
+            step_data.update(state) # Merge the state with the step data
+
+        if step_data['step'] != self.last_step:
+            self.last_step = step_data['step']
+            print("Pushing step data to the buffer...")
+            await self.loop.run_in_executor(None, self.step_queue.put, step_data.copy())
 
     def __is_same_step(
         self,
@@ -260,13 +288,6 @@ class ReceiverPeer(WebRTCClient):
         while not self.done.is_set():
             action: Dict[str, Any] = await self.loop.run_in_executor(None, self.action_queue.get)
             self.data_channel.send(json.dumps(action))
-            # await self.action_event.wait() # Use asyncio.Event to avoid call stack overflow
-            # if not self.action_queue.empty(): # Avoid Empty exception
-            #     action: Dict[str, Any] = self.action_queue.get_nowait()
-            #     print(f"Sending action {action} to provider...")
-            #     self.data_channel.send(json.dumps(action))
-            #     print("====================================")
-            #     self.action_event.clear()
 
     async def run(self) -> None: # asyncio.run(receiver.run())
         while not self.disconnected.set():
@@ -322,11 +343,13 @@ class ReceiverPeer(WebRTCClient):
 
             @self.data_channel.on("message")
             async def on_message(message: bytes) -> None:
-                # print(f"Received message: {message} for provider...")
-                state: Dict[str, Any] = json.loads(message)
-                # await self.state_queue.put(state)
-                await self.loop.run_in_executor(None, self.state_queue.put, state)
-                # await push_to_async_buffer(self.state_queue, state)
+                print("Receiving data channel message")
+                step_data: Dict[str, Any] = json.loads(message)
+                if not step_data['reset']:
+                    step_data['rgb'] = decompress_image(step_data['rgb'])
+                    step_data['depth'] = decompress_depth(step_data['depth'])
+                    step_data['semantic'] = decompress_semantic(step_data['semantic'])
+                await self.loop.run_in_executor(None, self.step_queue.put, step_data.copy())
 
             @self.data_channel.on("close")
             def on_close() -> None:
